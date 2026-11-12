@@ -62,8 +62,13 @@ class Worker(QThread):
 
     def run(self):
         try:
-            ModpackPipeline(self.cfg, self.log.emit, self.progress.emit).run()
-            self.done.emit(True, "Generation completed. Review the log and manifest.")
+            result = ModpackPipeline(self.cfg, self.log.emit, self.progress.emit).run()
+            if isinstance(result, dict):
+                self.done.emit(bool(result.get("success", True)), result.get(
+                    "message", "Generation completed. Review the log and manifest."
+                ))
+            else:
+                self.done.emit(True, "Generation completed. Review the log and manifest.")
         except Exception as exc:
             self.log.emit(f"ERROR · {type(exc).__name__}: {exc}")
             self.done.emit(False, str(exc))
@@ -307,7 +312,12 @@ class MainWindow(QMainWindow):
         self.clock.stop()
         self.runbtn.setEnabled(True)
         if ok:
-            self.on_progress(100, 100, "Finished. Review the installed mods and quest files.")
+            partial = "quest generation failed" in message.lower()
+            self.on_progress(
+                100, 100,
+                "Mods installed; quests need attention." if partial
+                else "Finished. Review the installed mods and quest files."
+            )
             self.statusBar().showMessage(message)
         else:
             self.progress.setRange(0, 100)
