@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QComboBox, QTextEdit, QPushButton, QLabel, QProgressBar,
     QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea
 )
-from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt, QPointF\nfrom PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
+from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt, QPointF
+from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
 import keyring
 from .mod_database import ModDatabase
 from .orchestrator import ModpackPipeline
@@ -113,7 +114,7 @@ class StructurePreview(QWidget):
         if not self.blocks:
             painter.setPen(QColor("#9ca3af"))
             painter.drawText(self.rect(), Qt.AlignCenter,
-                             "3D preview will appear here\\nDrag to rotate · scroll to zoom")
+                             "3D preview will appear here\nDrag to rotate · scroll to zoom")
             return
         import math
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
