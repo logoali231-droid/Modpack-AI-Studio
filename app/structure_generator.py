@@ -133,11 +133,31 @@ def validate_project(data, extra_materials=None):
         raise ValueError("A settlement must contain 2 to 10 buildings.")
     buildings = []
     for raw in raw_buildings:
+        raw = dict(raw)
+        if not raw.get("materials") and isinstance(data.get("materials"), dict):
+            raw["materials"] = data["materials"]
         building = validate_blueprint(raw, extra_materials)
-        building["x"] = _bounded_int(raw, "x", 0, width - 1)
-        building["z"] = _bounded_int(raw, "z", 0, depth - 1)
-        if building["x"] + building["width"] > width or building["z"] + building["depth"] > depth:
+        requested_x = _bounded_int(raw, "x", 0, width - 1)
+        requested_z = _bounded_int(raw, "z", 0, depth - 1)
+        if requested_x + building["width"] > width or requested_z + building["depth"] > depth:
             raise ValueError(f"Building '{building['name']}' extends beyond settlement bounds.")
+        def overlaps(px, pz):
+            return any(
+                px < other["x"] + other["width"] and px + building["width"] > other["x"]
+                and pz < other["z"] + other["depth"] and pz + building["depth"] > other["z"]
+                for other in buildings
+            )
+        px, pz = requested_x, requested_z
+        if overlaps(px, pz):
+            candidates = [
+                (x, z) for x in range(0, width - building["width"] + 1, 2)
+                for z in range(0, depth - building["depth"] + 1, 2)
+                if not overlaps(x, z)
+            ]
+            if not candidates:
+                raise ValueError(f"No free space remains for settlement building '{building['name']}'.")
+            px, pz = min(candidates, key=lambda point: abs(point[0] - requested_x) + abs(point[1] - requested_z))
+        building["x"], building["z"] = px, pz
         buildings.append(building)
     features = data.get("features", [])
     if not isinstance(features, list):
@@ -283,12 +303,26 @@ def build_project(project):
         width, depth = project["width"], project["depth"]
         materials = project["materials"]
         ground = _state(materials["accent"])
-        # Main paths connect each building to the settlement center.
+        # Choose an unoccupied plaza for the well and road hub when possible.
         cx, cz = width // 2, depth // 2
+        hub_x, hub_z = cx, cz
+        if "central_well" in project["features"]:
+            free = []
+            for hx in range(3, width - 2):
+                for hz in range(3, depth - 2):
+                    occupied = any(
+                        hx - 2 < bp["x"] + bp["width"] and hx + 3 > bp["x"]
+                        and hz - 2 < bp["z"] + bp["depth"] and hz + 3 > bp["z"]
+                        for bp in project["buildings"]
+                    )
+                    if not occupied:
+                        free.append((hx, hz))
+            if free:
+                hub_x, hub_z = min(free, key=lambda p: abs(p[0] - cx) + abs(p[1] - cz))
         if "main_road" in project["features"]:
             for bp in project["buildings"]:
                 bx, bz = bp["x"] + bp["width"] // 2, bp["z"] + bp["depth"] // 2
-                x0, z0 = cx, cz
+                x0, z0 = hub_x, hub_z
                 while x0 != bx:
                     blocks[(x0, 0, z0)] = _state("minecraft:gravel")
                     x0 += 1 if bx > x0 else -1
@@ -304,11 +338,11 @@ def build_project(project):
                 blocks[pos] = state
         if "central_well" in project["features"]:
             for y in range(0, 3):
-                for x in range(cx - 2, cx + 3):
-                    for z in range(cz - 2, cz + 3):
-                        if abs(x - cx) == 2 or abs(z - cz) == 2:
+                for x in range(hub_x - 2, hub_x + 3):
+                    for z in range(hub_z - 2, hub_z + 3):
+                        if abs(x - hub_x) == 2 or abs(z - hub_z) == 2:
                             blocks[(x, y, z)] = _state("minecraft:cobblestone")
-            blocks[(cx, 1, cz)] = _state("minecraft:water")
+            blocks[(hub_x, 1, hub_z)] = _state("minecraft:water")
         if "palisade" in project["features"]:
             for x in range(width):
                 for z in (0, depth - 1):
