@@ -5,24 +5,33 @@
 ## Features
 - Linux Mint desktop GUI (PySide6).
 - Natural-language modpack design using local Ollama, OpenAI, or Google Gemini.
-- **AI-selected Minecraft version:** enabled by default. Describe the gameplay and mod requirements; the AI recommends a stable Minecraft release, and the app checks that it is a recognized release before searching for files. You can disable this and enter a version manually.
-- Modrinth project/version lookup for Minecraft + Forge/Fabric/NeoForge/Quilt.
-- Required dependency resolution and JAR hash verification.
+- AI-selected Minecraft version, validated against released game versions.
+- Modrinth and CurseForge project/version lookup for Minecraft + Forge/Fabric/NeoForge/Quilt.
+- Required dependency graph resolution from catalog metadata.
+- **JAR-internal dependency verification:** inspects Forge/NeoForge `mods.toml`, Fabric/Quilt metadata, and legacy `mcmod.info` IDs before installation. Downloads are staged and checked before being copied into the Prism instance.
 - Installs into an existing Prism Launcher instance, with optional mods-folder backup.
-- Generates a three-chapter quest campaign as a native Minecraft datapack using the built-in Advancements screen. No FTB Quests or other quest mod is required.
+- Progression-sized quest campaigns generated as native Minecraft datapacks. Chapter count is no longer fixed at three. No FTB Quests or other quest mod is required.
+- Optional Playwright browser research can collect public documentation snippets for the local model. Browser text is untrusted context, never proof of compatibility.
 - API keys stored in the Linux desktop keyring, never in the repository.
 
-## How AI version selection works
-The app first asks the selected AI provider to choose a Minecraft Java release based on your prompt. It then validates that release against Modrinth's public list of released game versions. Only after validation does it ask the AI to design the mod list for that exact version and loader. Each candidate mod is then checked against the selected Minecraft version and loader before download. If the AI proposes an unknown or non-release version, generation stops before installing anything. The Activity log explains the choice, and the manifest records the chosen version and rationale.
+## Optional Playwright browser research
+The normal app does not need Playwright. To enable the optional browser-research checkbox:
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-browser.txt
+python -m playwright install chromium
+```
+The app performs bounded DuckDuckGo searches and reads a small number of pages. It does not give the model unrestricted browser control. Page content may be inaccurate or malicious, so it is treated as untrusted context. Catalog APIs and downloaded JAR metadata remain authoritative. Browser research is off by default and can be slow.
 
-The AI chooses the Minecraft version, while the user still chooses the modloader. If your prompt names a specific version or a mod with a known version requirement, the AI is instructed to respect it. Compatibility is checked per project, but this does not guarantee that every mod works conflict-free with every other mod.
+## Dependency verification
+Catalog APIs expose dependency relationships, but their project IDs are not always the same as the internal mod IDs checked by Forge/Fabric. The verifier inspects the actual downloaded archives and checks mandatory internal mod IDs across the combined existing + staged mod set. This catches cases such as a mod declaring a required `selene` mod ID even when the catalog dependency graph did not reveal it. The verifier also reports duplicate IDs and unreadable archives. It does not yet prove every semantic compatibility rule, evaluate all Maven version-range expressions, or guarantee that two mods cannot conflict at runtime.
 
 ## Free by design
 No subscription, credits, hosted backend, or app fee. For AI with no API bill, install [Ollama](https://ollama.com):
 ```bash
 ollama pull qwen2.5:3b
 ```
-Cloud providers are optional and may charge for API usage. Modrinth downloads use its public API.
+Cloud providers are optional and may charge for API usage. Modrinth downloads use its public API. CurseForge requires the user's own API key.
 
 ## Install on Linux Mint
 ```bash
@@ -33,10 +42,13 @@ cd Modpack-AI-Studio
 chmod +x launch.sh
 ./launch.sh
 ```
-Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let the AI choose the Minecraft version, create a matching Prism instance, then select its folder. If you already have a world save, optionally select the world folder (the folder containing `level.dat`) so the app can install the quest datapack directly into it.
+Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let the AI choose the Minecraft version, create a matching Prism instance, then select its folder. If you already have a world save, optionally select the world folder containing `level.dat` to install the quest datapack directly.
+
+## Quest system scope
+The model chooses the number of chapters based on the requested progression. The validator accepts 1-100 chapters and 1-20 quests per chapter as safety limits, not design targets. Quest objectives and rewards currently use vanilla item IDs only. Datapacks support the verified legacy advancement/item schema for Minecraft 1.13 through 1.20.4; unsupported newer schemas are rejected before mod installation. If no world is selected, the app creates `Modpack_AI_Quests.zip` in the Prism Minecraft directory; copy it into the target world's `datapacks` folder. Enter the world or run `/reload`, then press `L`. This uses Minecraft's native Advancements UI, not a separate custom quest-book screen.
 
 ## Current scope and caveats
-This is an early Modrinth-first desktop application, not a feature-complete Modbot.gg clone. CurseForge, shader/resource-pack management, automatic loader installation, visual dependency graphs, and one-click launching are not included yet. AI suggestions can conflict despite version filtering. The built-in quest system currently supports the verified legacy advancement/item schema for Minecraft 1.13 through 1.20.4 and uses vanilla item-inventory objectives, native advancements, and loot-table rewards. Unsupported newer item/advancement schemas are rejected before mod installation. It deliberately uses vanilla item IDs only, avoiding invalid guessed mod item IDs. If you select a world folder, the app installs the datapack into that world's `datapacks` directory. Otherwise it creates `Modpack_AI_Quests.zip` in the Prism Minecraft directory; copy that ZIP into the target world's `datapacks` folder. Enter the world or run `/reload`, then press `L` to open the Advancements screen. This first version uses Minecraft's native Advancements UI, not a separate custom quest-book screen. Back up your instance and close Minecraft before installing mods.
+This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research do not guarantee conflict-free gameplay. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
 ## License
 MIT. Minecraft is a trademark of Mojang Studios. Modrinth, CurseForge, Prism Launcher, Ollama, OpenAI, Gemini, and Modbot.gg belong to their respective owners. No affiliation or endorsement is implied.
