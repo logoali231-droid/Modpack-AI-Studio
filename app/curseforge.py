@@ -1,4 +1,4 @@
-"""CurseForge Minecraft mod lookup, required dependencies, and verified downloads.
+"""CurseForge Minecraft mod lookup, candidate discovery, dependencies, and verified downloads.
 
 CurseForge's official API requires a user-supplied API key. The app never
 ships a shared key. API details: https://docs.curseforge.com/
@@ -24,20 +24,20 @@ class CurseForge:
         self.s.headers.update({
             "Accept": "application/json",
             "x-api-key": api_key,
-            "User-Agent": "ModpackAIStudio/0.3",
+            "User-Agent": "ModpackAIStudio/0.4",
         })
 
     def get(self, url, params=None):
         for attempt in range(4):
             try:
-                r = self.s.get(url, params=params, timeout=(10, 45))
-                if r.status_code == 429:
-                    delay = min(int(r.headers.get("Retry-After", "3")), 30)
+                response = self.s.get(url, params=params, timeout=(10, 45))
+                if response.status_code == 429:
+                    delay = min(int(response.headers.get("Retry-After", "3")), 30)
                     self.log(f"CurseForge rate limited; waiting {delay}s")
                     time.sleep(delay)
                     continue
-                r.raise_for_status()
-                payload = r.json()
+                response.raise_for_status()
+                payload = response.json()
                 return payload.get("data", payload)
             except (requests.Timeout, requests.ConnectionError):
                 if attempt == 3:
@@ -52,25 +52,35 @@ class CurseForge:
             "searchFilter": query,
             "gameVersion": mc,
             "modLoaderType": LOADER_TYPES[loader],
-            "pageSize": 10,
+            "pageSize": 20,
             "sortField": 2,
             "sortOrder": "desc",
         }
         hits = self.get(f"{API}/mods/search", params) or []
-        if not hits:
-            return None
-        hit = hits[0]
-        return {"slug": str(hit["id"]), "name": hit.get("name", query)}
+        return [
+            {
+                "project_id": str(hit["id"]),
+                "slug": str(hit["id"]),
+                "name": hit.get("name", query),
+                "description": hit.get("summary", ""),
+                "categories": [
+                    category.get("name", "") for category in hit.get("categories", [])
+                    if category.get("name")
+                ],
+                "downloads": hit.get("downloadCount", 0),
+            }
+            for hit in hits if hit.get("id")
+        ]
 
     def resolve(self, identifier, mc, loader):
         try:
             mod_id = int(identifier)
         except (TypeError, ValueError):
-            hit = self.search(str(identifier), mc, loader)
-            if not hit:
+            candidates = self.search(str(identifier), mc, loader)
+            if not candidates:
                 self.log(f"No CurseForge project found: {identifier}")
                 return None
-            mod_id = int(hit["slug"])
+            mod_id = int(candidates[0]["project_id"])
 
         params = {
             "gameVersion": mc,
@@ -78,41 +88,41 @@ class CurseForge:
             "pageSize": 50,
         }
         files = self.get(f"{API}/mods/{mod_id}/files", params) or []
-        files = [f for f in files if f.get("isAvailable", True)]
-        files.sort(key=lambda f: f.get("fileDate", ""), reverse=True)
-        for f in files:
-            if f.get("releaseType") not in (1, 2):
+        files = [file for file in files if file.get("isAvailable", True)]
+        files.sort(key=lambda file: file.get("fileDate", ""), reverse=True)
+        for file in files:
+            if file.get("releaseType") not in (1, 2):
                 continue
-            filename = f.get("fileName", "")
+            filename = file.get("fileName", "")
             if not filename.lower().endswith(".jar"):
                 continue
-            download_url = f.get("downloadUrl")
+            download_url = file.get("downloadUrl")
             if not download_url:
                 try:
-                    download_url = self.get(f"{API}/mods/{mod_id}/files/{f['id']}/download-url")
+                    download_url = self.get(f"{API}/mods/{mod_id}/files/{file['id']}/download-url")
                 except requests.RequestException:
                     continue
             if not download_url:
                 continue
-            deps = [
-                {"project_id": str(d["modId"]), "dependency_type": "required"}
-                for d in f.get("dependencies", [])
-                if d.get("relationType") == 3 and d.get("modId")
+            dependencies = [
+                {"project_id": str(dep["modId"]), "dependency_type": "required"}
+                for dep in file.get("dependencies", [])
+                if dep.get("relationType") == 3 and dep.get("modId")
             ]
             hashes = {}
-            for h in f.get("hashes", []):
-                if h.get("algo") == 1:
-                    hashes["sha1"] = h.get("value")
-                elif h.get("algo") == 2:
-                    hashes["md5"] = h.get("value")
+            for item in file.get("hashes", []):
+                if item.get("algo") == 1:
+                    hashes["sha1"] = item.get("value")
+                elif item.get("algo") == 2:
+                    hashes["md5"] = item.get("value")
             return {
                 "project_id": str(mod_id),
-                "version_id": str(f["id"]),
-                "version_number": f.get("displayName") or filename,
+                "version_id": str(file["id"]),
+                "version_number": file.get("displayName") or filename,
                 "name": filename,
                 "url": download_url,
                 "hashes": hashes,
-                "dependencies": deps,
+                "dependencies": dependencies,
                 "project": str(mod_id),
             }
         self.log(f"No compatible CurseForge JAR: project {mod_id} ({mc}/{loader})")
@@ -124,24 +134,24 @@ class CurseForge:
         name = Path(mod["name"]).name
         if not name.lower().endswith(".jar") or name in (".", ".."):
             raise ValueError(f"Unsafe filename: {name}")
-        r = self.s.get(mod["url"], timeout=(15, 180))
-        r.raise_for_status()
-        content = r.content
-        for algo in ("sha1", "md5"):
-            expected = mod.get("hashes", {}).get(algo)
-            if expected and hashlib.new(algo, content).hexdigest().lower() != expected.lower():
-                raise RuntimeError(f"{algo} mismatch: {name}")
+        response = self.s.get(mod["url"], timeout=(15, 180))
+        response.raise_for_status()
+        content = response.content
+        for algorithm in ("sha1", "md5"):
+            expected = mod.get("hashes", {}).get(algorithm)
+            if expected and hashlib.new(algorithm, content).hexdigest().lower() != expected.lower():
+                raise RuntimeError(f"{algorithm} mismatch: {name}")
         path = dest / name
         if path.exists():
             if hashlib.sha1(path.read_bytes()).digest() == hashlib.sha1(content).digest():
                 return path
             raise FileExistsError(f"{name} exists with different contents; refusing overwrite.")
-        tmp = path.with_name(path.name + ".part")
+        temporary = path.with_name(path.name + ".part")
         try:
-            tmp.write_bytes(content)
-            tmp.replace(path)
+            temporary.write_bytes(content)
+            temporary.replace(path)
         finally:
-            if tmp.exists():
-                tmp.unlink()
+            if temporary.exists():
+                temporary.unlink()
         self.log(f"Downloaded {name} ({len(content) // 1024} KB)")
         return path
