@@ -35,7 +35,10 @@ def validate_campaign(data):
                 if not isinstance(task, dict):
                     continue
                 item = task.get("item")
-                if not isinstance(item, str) or not ITEM_RE.fullmatch(item):
+                # The first release deliberately sticks to vanilla registry IDs.
+                # This avoids generating datapacks that fail to load because an AI
+                # guessed a modded item ID that does not exist in the installed JAR.
+                if not isinstance(item, str) or not ITEM_RE.fullmatch(item) or not item.startswith("minecraft:"):
                     continue
                 tasks.append({"item": item, "count": _count(task.get("count"))})
             if not tasks:
@@ -45,7 +48,7 @@ def validate_campaign(data):
             if not isinstance(reward, dict):
                 reward = {}
             quest["reward"] = {
-                "item": _item(reward.get("item"), "minecraft:bread"),
+                "item": _item(reward.get("item"), "minecraft:bread") if str(reward.get("item", "")).startswith("minecraft:") else "minecraft:bread",
                 "count": _count(reward.get("count", 1)),
             }
     return data
