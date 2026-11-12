@@ -1,10 +1,11 @@
 from pathlib import Path
-import json, shutil, datetime, re
+import json, shutil, datetime, re, tempfile
 
 from .llm import LLMClient
 from .modrinth import Modrinth
 from .curseforge import CurseForge
 from .quests import build_datapack, pack_format_for, validate_campaign
+from .dependency_verifier import verify_mod_directory
 from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_SYSTEM
 
 
@@ -346,30 +347,62 @@ class ModpackPipeline:
         mcdir = self.minecraft_dir()
         modsdir = mcdir / "mods"
         modsdir.mkdir(parents=True, exist_ok=True)
-        self.log("3/4 · Installing verified JAR files…")
-        if self.c.get("backup") and any(modsdir.iterdir()):
-            backup = modsdir.with_name("mods.backup-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-            shutil.copytree(modsdir, backup)
-            self.log(f"Backup created: {backup}")
+        self.log("3/4 · Downloading to a temporary staging area for dependency verification…")
 
         installed, failed = [], []
-        total_downloads = len(resolved)
-        for download_index, item in enumerate(resolved.values(), 1):
-            self.progress(
-                50 + int(35 * (download_index - 1) / max(total_downloads, 1)), 100,
-                f"Installing mod {download_index} of {total_downloads}: {item['name']}"
+        staging = Path(tempfile.mkdtemp(prefix="modpack-ai-stage-", dir=str(mcdir)))
+        try:
+            total_downloads = len(resolved)
+            for download_index, item in enumerate(resolved.values(), 1):
+                self.progress(
+                    50 + int(25 * (download_index - 1) / max(total_downloads, 1)), 100,
+                    f"Downloading mod {download_index} of {total_downloads}: {item['name']}"
+                )
+                try:
+                    path = self.api.download(item, staging)
+                    installed.append({
+                        "name": item["name"], "project_id": item["project_id"],
+                        "version_id": item["version_id"], "file": path.name,
+                    })
+                except Exception as exc:
+                    failed.append({"file": item["name"], "error": str(exc)})
+                    self.log(f"Download failed: {item['name']}: {exc}")
+
+            # Inspect real internal mod IDs from the downloaded archives. Catalog
+            # dependency IDs are not necessarily the mod IDs Forge/Fabric checks.
+            staged_jars = list(staging.glob("*.jar"))
+            existing_jars = list(modsdir.glob("*.jar"))
+            verifier_report = verify_mod_directory(
+                existing_jars + staged_jars, self.log
             )
-            try:
-                path = self.api.download(item, modsdir)
-                installed.append({
-                    "name": item["name"],
-                    "project_id": item["project_id"],
-                    "version_id": item["version_id"],
-                    "file": path.name,
-                })
-            except Exception as exc:
-                failed.append({"file": item["name"], "error": str(exc)})
-                self.log(f"Download failed: {item['name']}: {exc}")
+            self.log(
+                f"Dependency verification passed: {verifier_report['checked_jars']} JARs, "
+                f"{len(verifier_report['discovered_mod_ids'])} internal mod IDs."
+            )
+
+            if self.c.get("backup") and any(modsdir.iterdir()):
+                backup = modsdir.with_name(
+                    "mods.backup-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                )
+                shutil.copytree(modsdir, backup)
+                self.log(f"Backup created: {backup}")
+
+            # No selected JAR is copied into the instance until the full dependency
+            # check succeeds. Never overwrite a different existing file.
+            for staged in staged_jars:
+                destination = modsdir / staged.name
+                if destination.exists():
+                    if destination.read_bytes() == staged.read_bytes():
+                        staged.unlink()
+                        continue
+                    raise FileExistsError(
+                        f"{destination.name} already exists with different contents. "
+                        "No staged mods were installed."
+                    )
+                shutil.move(str(staged), str(destination))
+            self.log(f"Installed {len(installed)} verified mod JAR(s).")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
         manifest = {
             "app": "Modpack AI Studio",
@@ -383,7 +416,7 @@ class ModpackPipeline:
             "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "selected_project_ids": list(selected.keys()),
             "installed": installed,
-            "failed": failed,
+            "failed": failed,\n            "dependency_verification": verifier_report,
         }
         (mcdir / "modpack-ai-manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -394,7 +427,7 @@ class ModpackPipeline:
         quest_status = {"status": "disabled"}
         if self.c.get("quests"):
             quest_status = {"status": "failed", "error": "Quest generation did not complete."}
-            self.progress(0, 0, "AI is generating your native three-chapter quest campaign…")
+            self.progress(0, 0, "AI is generating your native progression-sized native quest campaign…")
             self.log("4/4 · Designing a native Minecraft advancement quest campaign…")
             self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names = ", ".join(item["name"] for item in installed)
@@ -411,8 +444,8 @@ class ModpackPipeline:
                         f"VALIDATION ERROR:\n{first_error}\n\n"
                         "PREVIOUS AI RESPONSE (repair this; do not start over):\n"
                         f"{raw_quests}\n\n"
-                        "Return a corrected JSON object with exactly three chapters. "
-                        "Each chapter must contain at least three quests, and each quest "
+                        "Return a corrected JSON campaign with a progression-appropriate number of chapters. "
+                        "Each chapter must contain 1-20 quests, and each quest "
                         "must contain at least one valid item task. Return JSON only."
                     )
                     repaired = self.llm.text(
