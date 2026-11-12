@@ -403,7 +403,13 @@ class ModpackPipeline:
         result = self.llm.json_from(self.llm.text(ERROR_ANALYSIS_SYSTEM, prompt))
         if not isinstance(result, dict) or not result.get("summary"):
             raise ValueError("The model did not return a usable error diagnosis.")
-        record_lesson(result, self.c.get("model", "unknown"), self.c.get("provider", "unknown"))
+        saved_path = record_lesson(
+            result, self.c.get("model", "unknown"), self.c.get("provider", "unknown")
+        )
+        result["saved_to"] = str(saved_path)
+        result["memory_note"] = (
+            "Saved as an unverified lesson. Confirm it in the UI before it is reused in future runs."
+        )
         return result
 
     def confirm_latest_error_lesson(self):
