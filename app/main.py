@@ -145,10 +145,10 @@ class MainWindow(QMainWindow):
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.Password)
         self.ollama = QLineEdit("http://localhost:11434")
-        self.auto_version = QCheckBox("Let AI choose the Minecraft version from my prompt")
+        self.auto_version = QCheckBox("AI chooses the Minecraft version from my prompt")
         self.auto_version.setChecked(True)
         self.version = QLineEdit("1.20.1")
-        self.version.setToolTip("Used only when automatic version selection is disabled.")
+        self.version.setToolTip("The AI-selected Minecraft version appears here.")
         self.loader = QComboBox()
         self.loader.addItems(["forge", "fabric", "neoforge", "quilt"])
 
@@ -234,9 +234,9 @@ class MainWindow(QMainWindow):
 
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
-        self.auto_version.toggled.connect(self.version.setDisabled)
-        self.version.setDisabled(True)
+        self.auto_version.setEnabled(False)
         self.version.setReadOnly(True)
+        self.version.setEnabled(False)
         self.version.setToolTip("The selected target version will appear here. Create a matching Prism instance before continuing.")
         self.statusBar().showMessage("Step 1 · Let the AI choose the Minecraft version")
 
@@ -361,6 +361,13 @@ class MainWindow(QMainWindow):
             self.version.setText(self.selected_version)
             self.instance.setEnabled(True)
             self.browse_button.setEnabled(True)
+            # Freeze the inputs used for version selection so the target cannot drift
+            # while the user creates the matching Prism instance.
+            for widget in (
+                self.provider, self.model, self.key, self.ollama,
+                self.auto_version, self.loader, self.prompt
+            ):
+                widget.setEnabled(False)
             self.runbtn.setText("2. Continue with this Prism instance")
             self.phase = "generate"
             self.on_progress(100, 100, f"Paused. Create a Minecraft {self.selected_version} Prism instance.")
