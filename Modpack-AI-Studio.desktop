@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Modpack AI Studio
+Comment=Free local-first Minecraft modpack and quest generator
+Exec=sh -c 'cd "$(dirname "$1")" && ./launch.sh' _ %k
+Icon=applications-games
+Terminal=true
+Type=Application
+Categories=Game;Utility;
