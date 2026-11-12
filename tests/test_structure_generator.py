@@ -62,7 +62,7 @@ class StructureGeneratorTests(unittest.TestCase):
 
     def test_modded_block_palette_rejects_malformed_ids(self):
         palette = {"bad": "Create:No Spaces"}
-        with self.assertRaisesRegex(ValueError, "Invalid custom palette"):
+        with self.assertRaisesRegex(ValueError, "Invalid resource location"):
             validate_project(self.single(), palette)
 
     def test_procedural_builder_creates_nonempty_bounded_structure(self):
