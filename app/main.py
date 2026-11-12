@@ -1078,6 +1078,7 @@ class MainWindow(QMainWindow):
                 "minecraft": payload.get("minecraft"),
                 "dimensions": payload.get("dimensions"),
                 "block_count": payload.get("block_count"),
+                "load_offset_y": payload.get("load_offset_y", 0),
                 "file": payload.get("file"),
                 "blueprint": payload.get("blueprint"),
             }
@@ -1088,9 +1089,11 @@ class MainWindow(QMainWindow):
                 self, "Structure generated",
                 f"{payload.get('name')}\n"
                 f"Dimensions: {' × '.join(str(v) for v in payload.get('dimensions', []))}\n"
-                f"Blocks: {payload.get('block_count', 0):,}\n\n"
+                f"Blocks: {payload.get('block_count', 0):,}\n"
+                f"Structure Block Y offset: {payload.get('load_offset_y', 0)}\n\n"
                 f"Saved to:\n{payload.get('file')}\n\n"
-                "Import this .nbt with a compatible structure tool or a Minecraft Structure Block."
+                "Import this .nbt with a compatible structure tool or a Minecraft Structure Block. "
+                "For a dungeon, use the reported negative Y offset to align the surface with the placement point."
             )
             return
 
