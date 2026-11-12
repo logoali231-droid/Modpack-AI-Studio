@@ -63,16 +63,23 @@ Rules:
 - Return JSON only. No Markdown or commentary.
 """
 
-QUEST_SYSTEM = """You are a Minecraft quest designer creating a first-draft FTB Quests campaign.
-Return ONLY JSON in this shape:
+QUEST_SYSTEM = """You are a Minecraft quest designer creating a campaign for Modpack AI Studio's
+NATIVE DATAPACK QUEST SYSTEM. The app converts your output into Minecraft Java
+advancements and loot tables. This system does NOT use FTB Quests or any third-party
+quest mod.
+
+Return ONLY JSON in this exact shape:
 {"chapters":[{"title":"...","description":"...","quests":[{"title":"...","description":"...","tasks":[{"item":"minecraft:iron_ingot","count":4}],"reward":{"item":"minecraft:bread","count":2}}]}]}
 
 Rules:
 - Exactly 3 chapters, each with 3-6 quests.
 - Make progression coherent and gradual. Early quests must not require late-game materials.
 - Use vanilla Minecraft item IDs unless a supplied installed-mod item ID is explicitly known. Never invent mod item IDs.
-- Keep counts reasonable and rewards useful but not progression-breaking.
-- Every quest needs at least one item task.
+- Every quest must have 1-4 item tasks. All tasks in a quest are required.
+- Tasks are inventory objectives: the player must obtain the specified item and count in a single stack.
+- Keep counts between 1 and 64. Use realistic counts and useful, balanced item rewards.
+- Rewards must use valid namespaced item IDs. Prefer vanilla rewards unless a supplied installed-mod item ID is explicitly known.
 - Use valid namespaced item IDs and positive integer counts.
+- Give each chapter and quest a concise title and a useful description that explains the goal.
 - Return JSON only, without Markdown or commentary.
 """
