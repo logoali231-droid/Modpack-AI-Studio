@@ -595,7 +595,8 @@ class ModpackPipeline:
             "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "selected_project_ids": list(selected.keys()),
             "installed": installed,
-            "failed": failed,\n            "dependency_verification": verifier_report,
+            "failed": failed,
+            "dependency_verification": verifier_report,
         }
         (mcdir / "modpack-ai-manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
