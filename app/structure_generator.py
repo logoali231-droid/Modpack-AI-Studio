@@ -430,7 +430,18 @@ def generate_structure(llm, description, minecraft_version, output_path, log, pr
         progress(10, 100, "Qwen is designing the structure or settlement…")
     log("Structure Designer · asking the model for a compact architectural plan.")
     raw = llm.text(system, f"USER REQUEST:\n{description.strip()[:5000]}\nReturn the design JSON only.")
-    project = validate_project(llm.json_from(raw), custom_palette)
+    try:
+        project = validate_project(llm.json_from(raw), custom_palette)
+    except (ValueError, TypeError, KeyError) as first_error:
+        log(f"Blueprint validation failed ({first_error}); asking Qwen for one constrained repair.")
+        repair_prompt = (
+            "Your previous JSON blueprint failed validation. Correct it using the exact schema and rules. "
+            "Preserve the user's creative intent while fixing the error. "
+            f"Validation error: {first_error}\nPrevious response:\n{raw[:12000]}\n"
+            "Return only the corrected JSON object."
+        )
+        repaired = llm.text(system, repair_prompt)
+        project = validate_project(llm.json_from(repaired), custom_palette)
     if progress:
         progress(45, 100, "Procedural engine is building rooms, dungeons and settlement layout…")
     size, blocks = build_project(project)
