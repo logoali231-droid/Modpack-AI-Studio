@@ -491,6 +491,12 @@ def generate_structure(llm, description, minecraft_version, output_path, log, pr
     preview_stride = max(1, len(preview_source) // 5000)
     preview = [[x, y, z, state[0]] for (x, y, z), state in preview_source[::preview_stride][:5000]
                if not state[0].endswith(":air")]
+    has_dungeon = (
+        "dungeon" in project.get("features", [])
+        if project["mode"] == "single"
+        else any("dungeon" in building.get("features", []) for building in project["buildings"])
+    )
     return {"success": True, "name": project["name"], "file": str(output_path),
             "minecraft": TARGET_VERSION, "dimensions": list(size), "block_count": len(blocks),
-            "mode": project["mode"], "blueprint": project, "preview_blocks": preview}
+            "mode": project["mode"], "load_offset_y": -7 if has_dungeon else 0,
+            "blueprint": project, "preview_blocks": preview}
