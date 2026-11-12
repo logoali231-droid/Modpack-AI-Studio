@@ -533,12 +533,15 @@ class MainWindow(QMainWindow):
             self.library_stats.setText(f"Database unavailable: {exc}")
 
     def search_mod_library(self):
-        from html import escape
         query = self.library_query.text().strip()
         source = self.library_filter.currentText().lower()
         source = "all" if source == "all sources" else source
         try:
-            records = ModDatabase().search(query, source=source, limit=100)
+            records = ModDatabase().search(
+                query, source=source, limit=100,
+                game_version=self.library_version.text().strip(),
+                loader=self.library_loader.currentText()
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Database error", str(exc))
             return
