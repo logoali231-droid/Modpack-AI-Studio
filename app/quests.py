@@ -67,13 +67,10 @@ def pack_format_for(version):
         "1.18": 8, "1.18.1": 8, "1.18.2": 9,
         "1.19": 10, "1.19.1": 10, "1.19.2": 10, "1.19.3": 12, "1.19.4": 13,
         "1.20": 15, "1.20.1": 15, "1.20.2": 18, "1.20.3": 22, "1.20.4": 22,
-        "1.20.5": 32, "1.20.6": 32,
-        "1.21": 48, "1.21.1": 48, "1.21.2": 57, "1.21.3": 57,
-        "1.21.4": 61, "1.21.5": 71, "1.21.6": 80, "1.21.7": 81, "1.21.8": 81,
     }
     if version not in exact:
         raise ValueError(
-            f"Native quest datapacks do not yet have a verified pack format mapping for Minecraft {version}."
+            f"Native quest datapacks currently support the verified legacy advancement/item schema through Minecraft 1.20.4; no compatible schema is implemented for Minecraft {version}."
         )
     return exact[version]
 
