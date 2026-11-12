@@ -86,13 +86,28 @@ class ModpackPipeline:
                     self.log(f"Could not resolve {ident or fallback_name}: {exc}"); continue
             if not item and fallback_name:
                 try:
-                    hit=self.api.search(fallback_name,mc,loader)
-                    replacement_id=(hit or {}).get("slug") or (hit or {}).get("project_id")
-                    if replacement_id and replacement_id!=ident:
-                        self.log(f"Catalog match for '{fallback_name}': {replacement_id}")
-                        item=self.api.resolve(replacement_id,mc,loader)
+                    hits=self.api.search(fallback_name,mc,loader)
+                    if catalog=="Modrinth":
+                        # Never trust the first search hit. Require an exact normalized
+                        # project-title match, then verify a real compatible JAR.
+                        normalize=lambda value: re.sub(r"[^a-z0-9]","",str(value or "").lower())
+                        wanted=normalize(fallback_name)
+                        exact=[h for h in hits if normalize(h.get("title"))==wanted]
+                        if not exact:
+                            self.log(f"No exact Modrinth project-name match for '{fallback_name}'; skipping rather than installing an unrelated result.")
+                        for hit in exact:
+                            replacement_id=hit.get("slug") or hit.get("project_id")
+                            if not replacement_id or replacement_id==ident: continue
+                            self.log(f"Exact Modrinth title match for '{fallback_name}': {hit.get('title')} ({replacement_id})")
+                            item=self.api.resolve(replacement_id,mc,loader)
+                            if item: break
+                    else:
+                        hit=hits[0] if isinstance(hits,list) and hits else hits
+                        replacement_id=(hit or {}).get("slug") or (hit or {}).get("project_id")
+                        if replacement_id and replacement_id!=ident:
+                            item=self.api.resolve(replacement_id,mc,loader)
                 except Exception as exc:
-                    self.log(f"Could not find a compatible match for '{fallback_name}': {exc}")
+                    self.log(f"Could not find a verified compatible match for '{fallback_name}': {exc}")
             if not item: continue
             resolved[item["project_id"]]=item
             for dep in item["dependencies"]:
