@@ -181,7 +181,15 @@ class MainWindow(QMainWindow):
         self.runbtn.setMinimumHeight(42)
         self.runbtn.clicked.connect(self.start)
         create_layout.addWidget(self.runbtn)
-        tabs.addTab(create_page, "Create")
+
+        # Keep the Create page usable on smaller displays and when maximized.
+        create_scroll = QScrollArea()
+        create_scroll.setWidgetResizable(True)
+        create_scroll.setFrameShape(QScrollArea.NoFrame)
+        create_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        create_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        create_scroll.setWidget(create_page)
+        tabs.addTab(create_scroll, "Create")
 
         activity_page = QWidget()
         activity_layout = QVBoxLayout(activity_page)
@@ -312,7 +320,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLE)
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
