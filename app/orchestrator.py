@@ -76,23 +76,37 @@ class ModpackPipeline:
         queue=[]; resolved={}; seen=set()
         for entry in proposed:
             if not isinstance(entry,dict): continue
-            ident = (entry.get("slug") or "").strip() if catalog == "Modrinth" else ""
-            if entry.get("name") and (catalog == "CurseForge" or not ident):
-                hit=self.api.search(entry["name"],mc,loader)
-                if hit: ident=hit.get("slug") or hit.get("project_id")
-            if ident: queue.append(ident)
+            name=str(entry.get("name") or "").strip()
+            ident=(entry.get("slug") or "").strip() if catalog=="Modrinth" else ""
+            if ident or name: queue.append((ident,name))
         while queue:
-            ident=queue.pop(0)
-            if ident in seen: continue
-            seen.add(ident)
-            try: item=self.api.resolve(ident,mc,loader)
-            except Exception as exc: self.log(f"Could not resolve {ident}: {exc}"); continue
+            ident,fallback_name=queue.pop(0)
+            if ident and ident in seen: continue
+            if ident: seen.add(ident)
+            try:
+                item=self.api.resolve(ident,mc,loader) if ident else None
+            except Exception as exc:
+                status=getattr(getattr(exc,"response",None),"status_code",None)
+                if status==404 and fallback_name:
+                    self.log(f"Unknown project identifier '{ident}'. Searching the catalog for '{fallback_name}'…")
+                    item=None
+                else:
+                    self.log(f"Could not resolve {ident or fallback_name}: {exc}"); continue
+            if not item and fallback_name:
+                try:
+                    hit=self.api.search(fallback_name,mc,loader)
+                    replacement_id=(hit or {}).get("slug") or (hit or {}).get("project_id")
+                    if replacement_id and replacement_id!=ident:
+                        self.log(f"Catalog match for '{fallback_name}': {replacement_id}")
+                        item=self.api.resolve(replacement_id,mc,loader)
+                except Exception as exc:
+                    self.log(f"Could not find a compatible match for '{fallback_name}': {exc}")
             if not item: continue
             resolved[item["project_id"]]=item
             for dep in item["dependencies"]:
                 if dep.get("dependency_type")=="required":
                     depid=dep.get("project_id")
-                    if depid and depid not in resolved and depid not in seen: queue.append(depid)
+                    if depid and depid not in resolved and depid not in seen: queue.append((depid,""))
         if not resolved: raise RuntimeError(f"No compatible {catalog} files found for Minecraft {mc}/{loader}.")
         self.log(f"Found {len(resolved)} compatible projects including required dependencies.")
         mcdir=self.minecraft_dir(); modsdir=mcdir/"mods"; modsdir.mkdir(parents=True,exist_ok=True)
