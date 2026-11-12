@@ -6,7 +6,8 @@ from .modrinth import Modrinth
 from .curseforge import CurseForge
 from .quests import build_datapack, pack_format_for, validate_campaign
 from .dependency_verifier import verify_mod_directory
-from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_SYSTEM
+from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_PLAN_SYSTEM, QUEST_CHAPTER_SYSTEM, ERROR_ANALYSIS_SYSTEM
+from .error_memory import load_confirmed_lessons, record_lesson, confirm_latest_lesson
 
 
 class ModpackPipeline:
@@ -256,6 +257,139 @@ class ModpackPipeline:
         self.log(f"AI selected {len(selected)} verified projects.")
         return selected
 
+
+    def _generate_campaign(self, concept, mc, loader, installed_names):
+        """Plan once, then generate and validate one chapter per local-model call."""
+        plan_input = (
+            f"Modpack concept: {concept}\\nMinecraft {mc} {loader}. "
+            f"Installed mods: {installed_names}\\n"
+            "Return a progression outline only. Do not write quests yet."
+        )
+        plan_raw = self.llm.text(QUEST_PLAN_SYSTEM, plan_input)
+        plan = self.llm.json_from(plan_raw)
+        outlines = plan.get("chapters") if isinstance(plan, dict) else None
+        if not isinstance(outlines, list) or not 1 <= len(outlines) <= 20:
+            raise ValueError("Quest plan must contain 1-20 chapter outlines.")
+        chapters = []
+        campaign_title = str(plan.get("campaign_title") or "Modpack AI Campaign")[:80]
+        for index, outline in enumerate(outlines, 1):
+            if not isinstance(outline, dict):
+                raise ValueError(f"Chapter outline {index} is invalid.")
+            title = str(outline.get("title") or f"Chapter {index}")[:80]
+            description = str(outline.get("description") or "Progress through this stage.")[:200]
+            self.log(f"Quest chapter {index}/{len(outlines)}: generating {title}…")
+            chapter_input = (
+                f"CAMPAIGN: {campaign_title}\\nCHAPTER {index}/{len(outlines)}: {title}\\n"
+                f"CHAPTER PURPOSE: {description}\\nMODPACK: {concept}\\n"
+                f"MINECRAFT: {mc} {loader}\\nINSTALLED MODS: {installed_names}\\n"
+                "Create exactly 3 quests for THIS chapter only. Return a JSON object "
+                "with title, description, and quests. Do not return a chapters wrapper."
+            )
+            raw = self.llm.text(QUEST_CHAPTER_SYSTEM, chapter_input)
+            try:
+                chapter_data = self.llm.json_from(raw)
+                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapter"), dict):
+                    chapter_data = chapter_data["chapter"]
+                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapters"), list):
+                    chapter_data = chapter_data["chapters"][0] if chapter_data["chapters"] else {}
+                chapter_data["title"] = title
+                chapter_data["description"] = description
+                validated = validate_campaign({"chapters": [chapter_data]})
+                chapters.append(validated["chapters"][0])
+            except (ValueError, TypeError, KeyError, IndexError, AttributeError) as first_error:
+                self.log(f"Chapter {index} invalid: {first_error}. Retrying only this chapter…")
+                repair_input = (
+                    f"CHAPTER: {title}\\nPURPOSE: {description}\\n"
+                    f"VALIDATION ERROR: {first_error}\\nPREVIOUS RESPONSE:\\n{raw}\\n"
+                    "Return one corrected chapter object with exactly 3 quests. "
+                    "Every quest needs a non-empty tasks array with valid minecraft: item IDs. "
+                    "Do not return a campaign wrapper."
+                )
+                repaired = self.llm.text(
+                    QUEST_CHAPTER_SYSTEM + "\\nYou are repairing only this chapter. Follow the schema exactly.",
+                    repair_input
+                )
+                chapter_data = self.llm.json_from(repaired)
+                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapter"), dict):
+                    chapter_data = chapter_data["chapter"]
+                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapters"), list):
+                    chapter_data = chapter_data["chapters"][0] if chapter_data["chapters"] else {}
+                chapter_data["title"] = title
+                chapter_data["description"] = description
+                validated = validate_campaign({"chapters": [chapter_data]})
+                chapters.append(validated["chapters"][0])
+        return validate_campaign({"campaign_title": campaign_title, "chapters": chapters})
+
+    def _write_quest_datapack(self, mc, concept, installed_names, mcdir, world_value=""):
+        campaign = self._generate_campaign(concept, mc, self.c.get("loader", "forge"), installed_names)
+        datapack_files = build_datapack(campaign, mc)
+        import zipfile
+        archive = mcdir / "Modpack_AI_Quests.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as pack:
+            for relative_path, content in datapack_files.items():
+                pack.writestr(relative_path, content)
+        installed_to_world = False
+        if world_value:
+            world_root = Path(world_value).expanduser().resolve()
+            if not world_root.is_dir() or not (world_root / "level.dat").is_file():
+                raise ValueError("The selected Minecraft world folder is invalid; choose the folder containing level.dat.")
+            datapacks_dir = world_root / "datapacks"
+            datapacks_dir.mkdir(parents=True, exist_ok=True)
+            destination = datapacks_dir / archive.name
+            shutil.copy2(archive, destination)
+            installed_to_world = True
+            self.log(f"Custom quest datapack installed into world: {destination}")
+        else:
+            destination = archive
+            self.log(f"Custom quest datapack ZIP created: {archive}")
+            self.log("Copy this ZIP into your world's datapacks folder, run /reload, then press L.")
+        self.log("Native quest campaign generated with Minecraft Advancements; no quest mod is required.")
+        return {
+            "status": "generated", "system": "minecraft_advancements_datapack",
+            "file": archive.name, "installed_to_world": installed_to_world,
+            "destination": str(destination), "access": "Press L (Advancements) in-game."
+        }
+
+    def retry_quests_only(self):
+        """Regenerate quests from the existing manifest without searching or reinstalling mods."""
+        mcdir = self.minecraft_dir()
+        manifest_path = mcdir / "modpack-ai-manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError("No modpack manifest found in this Prism instance.")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        mc = str(manifest.get("minecraft", "")).strip()
+        if mc != self.prism_minecraft_version():
+            raise ValueError("Manifest Minecraft version does not match this Prism instance.")
+        pack_format_for(mc)
+        installed_names = ", ".join(item.get("name", item.get("file", "")) for item in manifest.get("installed", []))
+        status = self._write_quest_datapack(
+            mc, manifest.get("concept", ""), installed_names, mcdir,
+            str(self.c.get("world_path", "")).strip()
+        )
+        manifest["quests"] = status
+        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"success": True, "quests_failed": False, "message": "Quest campaign generated without reinstalling mods."}
+
+    def diagnose_and_learn(self, error_text):
+        """Use the local model to diagnose a log and persist a reusable, untrusted lesson."""
+        lessons = load_confirmed_lessons()
+        prompt = (
+            "Analyze this application/Minecraft error log. Separate observed facts from hypotheses. "
+            "Return JSON with fields: summary, likely_cause, evidence, safe_fix_steps (array), "
+            "code_change_suggestion, reusable_lesson, confidence (low/medium/high). "
+            "Never claim a fix was applied. Do not recommend deleting worlds or mod folders.\\n\\n"
+            f"CONFIRMED PRIOR LESSONS:\\n{json.dumps(lessons, ensure_ascii=False)}\\n\\n"
+            f"ERROR LOG:\\n{error_text[-14000:]}"
+        )
+        result = self.llm.json_from(self.llm.text(ERROR_ANALYSIS_SYSTEM, prompt))
+        if not isinstance(result, dict) or not result.get("summary"):
+            raise ValueError("The model did not return a usable error diagnosis.")
+        record_lesson(result, self.c.get("model", "unknown"), self.c.get("provider", "unknown"))
+        return result
+
+    def confirm_latest_error_lesson(self):
+        return confirm_latest_lesson()
+
     def run(self):
         self.progress(0, 100, "Preparing your modpack…")
         mc, loader, concept = self.c["version"], self.c["loader"], self.c["prompt"]
@@ -450,70 +584,11 @@ class ModpackPipeline:
             names = ", ".join(item["name"] for item in installed)
             quest_input = f"Concept: {concept}\nMinecraft {mc} {loader}. Installed mods: {names}"
             try:
-                raw_quests = self.llm.text(QUEST_SYSTEM, quest_input)
-                self.progress(90, 100, "AI response received. Validating quest campaign…")
                 try:
-                    campaign = validate_campaign(self.llm.json_from(raw_quests))
-                except (ValueError, TypeError, KeyError) as first_error:
-                    self.log(f"Quest response was invalid: {first_error}. Requesting one repair attempt…")
-                    repair_input = (
-                        f"ORIGINAL REQUEST:\n{quest_input}\n\n"
-                        f"VALIDATION ERROR:\n{first_error}\n\n"
-                        "PREVIOUS AI RESPONSE (repair this; do not start over):\n"
-                        f"{raw_quests}\n\n"
-                        "Return a corrected JSON campaign with a progression-appropriate number of chapters. "
-                        "Each chapter must contain 1-20 quests, and each quest "
-                        "must contain at least one valid item task. Return JSON only."
-                    )
-                    repaired = self.llm.text(
-                        QUEST_SYSTEM + "\nYou are repairing a failed response. Follow the schema exactly.",
-                        repair_input
-                    )
-                    campaign = validate_campaign(self.llm.json_from(repaired))
-
-                # Build a self-contained vanilla datapack. No quest mod is required.
-                datapack_files = build_datapack(campaign, mc)
-                import zipfile
-                archive = mcdir / "Modpack_AI_Quests.zip"
-                with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as pack:
-                    for relative_path, content in datapack_files.items():
-                        pack.writestr(relative_path, content)
-
-                world_value = str(self.c.get("world_path", "")).strip()
-                installed_to_world = False
-                if world_value:
-                    world_root = Path(world_value).expanduser().resolve()
-                    if not world_root.is_dir() or not (world_root / "level.dat").is_file():
-                        raise ValueError(
-                            "The selected Minecraft world folder is invalid. Choose the world folder "
-                            "that contains level.dat, or leave the field empty to create a datapack ZIP."
-                        )
-                    datapacks_dir = world_root / "datapacks"
-                    datapacks_dir.mkdir(parents=True, exist_ok=True)
-                    destination = datapacks_dir / archive.name
-                    shutil.copy2(archive, destination)
-                    installed_to_world = True
-                    self.log(f"Custom quest datapack installed into world: {destination}")
-                else:
-                    destination = archive
-                    self.log(f"Custom quest datapack ZIP created: {archive}")
-                    self.log(
-                        "To use it, copy this ZIP into your world's datapacks folder, then run /reload "
-                        "or re-enter the world. Press L in-game to open the Advancements quest screen."
-                    )
-
-                quest_status = {
-                    "status": "generated",
-                    "system": "minecraft_advancements_datapack",
-                    "file": archive.name,
-                    "installed_to_world": installed_to_world,
-                    "destination": str(destination),
-                    "access": "Press L (Advancements) in-game."
-                }
-                self.log(
-                    "Native quest campaign generated. It uses Minecraft's built-in Advancements screen; "
-                    "FTB Quests and other quest mods are not required."
+                quest_status = self._write_quest_datapack(
+                    mc, concept, names, mcdir, world_value
                 )
+
             except Exception as exc:
                 quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
                 self.log(
