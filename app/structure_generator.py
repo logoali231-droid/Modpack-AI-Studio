@@ -3,6 +3,7 @@ import gzip
 import json
 import re
 import struct
+import zipfile
 from pathlib import Path
 
 TARGET_VERSION = "1.16.5"
@@ -411,6 +412,39 @@ def write_structure_nbt(path, size, blocks):
     with target.open("wb") as handle:
         handle.write(gzip.compress(bytes([10]) + _utf("") + root, mtime=0))
     return target
+
+def discover_modded_block_palette(mods_directory, limit=3000):
+    """Suggest namespaced block IDs from blockstate assets inside local mod JARs.
+
+    Presence of a blockstate asset is a useful discovery hint, not proof that the
+    mod registers that block in the selected Minecraft/loader runtime.
+    """
+    root = Path(mods_directory).expanduser()
+    if not root.is_dir():
+        raise ValueError(f"Mods directory does not exist: {root}")
+    found = {}
+    for jar_path in sorted(root.glob("*.jar")):
+        try:
+            with zipfile.ZipFile(jar_path) as archive:
+                for entry in archive.namelist():
+                    match = re.match(r"^assets/([a-z0-9_.-]+)/blockstates/(.+)\\.json$", entry)
+                    if not match or match.group(1) == "minecraft":
+                        continue
+                    namespace, block_path = match.groups()
+                    resource_id = f"{namespace}:{block_path}"
+                    base = re.sub(r"[^a-z0-9_]", "_", f"{namespace}_{block_path}")[:26].strip("_")
+                    alias = base or "mod_block"
+                    suffix = 2
+                    while alias in found and found[alias] != resource_id:
+                        alias = f"{base[:22]}_{suffix}"
+                        suffix += 1
+                    found[alias] = resource_id
+                    if len(found) >= limit:
+                        return found
+        except (OSError, zipfile.BadZipFile):
+            continue
+    return found
+
 
 def generate_structure(llm, description, minecraft_version, output_path, log, progress=None, custom_palette=None):
     if str(minecraft_version).strip() != TARGET_VERSION:
