@@ -47,6 +47,14 @@ Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let t
 ## Quest system scope
 The model chooses the number of chapters based on the requested progression. The validator accepts 1-100 chapters and 1-20 quests per chapter as safety limits, not design targets. Quest objectives and rewards currently use vanilla item IDs only. Datapacks support the verified legacy advancement/item schema for Minecraft 1.13 through 1.20.4; unsupported newer schemas are rejected before mod installation. If no world is selected, the app creates `Modpack_AI_Quests.zip` in the Prism Minecraft directory; copy it into the target world's `datapacks` folder. Enter the world or run `/reload`, then press `L`. This uses Minecraft's native Advancements UI, not a separate custom quest-book screen.
 
+## AI Structure Designer (first version)
+
+The **Structure Designer** tab turns a natural-language building request into a compact AI blueprint, then uses a deterministic procedural builder to create the actual block layout. The model does not emit thousands of block coordinates. It chooses bounded dimensions, building type, floors, roof style, room types, features, and materials from a strict whitelist; Python validates the blueprint and constructs the geometry.
+
+The first exporter writes a gzip-compressed vanilla Minecraft structure NBT file for **Minecraft Java 1.16.5 only** (DataVersion 2586). Current limits are 9–25 blocks wide/deep, 1–4 floors, up to 60,000 blocks, and a verified vanilla material palette. The generated file can be imported with a compatible structure tool or placed using Minecraft's Structure Block. The app does not yet place structures automatically or inject them into natural chunk generation. It also does not yet add modded blocks, loot-table contents, entities, or custom structure-generation rules. The optional cellar feature currently represents a cellar access detail, not a fully excavated underground dungeon.
+
+To use it, open **Structure Designer**, describe a building, keep the target at Minecraft 1.16.5, choose an output .nbt path, and click **Generate custom structure with AI**. It uses the same configured AI provider/model as the rest of the app. With Ollama, no cloud API is required.
+
 ## Current scope and caveats
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research do not guarantee conflict-free gameplay. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
