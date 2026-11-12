@@ -26,7 +26,9 @@ def validate_campaign(data):
     for ci, chapter in enumerate(data["chapters"], 1):
         if not isinstance(chapter, dict) or not isinstance(chapter.get("quests"), list) or not chapter["quests"]:
             raise ValueError(f"Chapter {ci} needs quests.")
-        chapter["quests"] = chapter["quests"][:8]
+        chapter["quests"] = chapter["quests"][:6]
+        if len(chapter["quests"]) < 3:
+            raise ValueError(f"Chapter {ci} needs at least three quests.")
         for qi, quest in enumerate(chapter["quests"], 1):
             if not isinstance(quest, dict) or not isinstance(quest.get("tasks"), list) or not quest["tasks"]:
                 raise ValueError(f"Chapter {ci}, quest {qi} needs at least one item task.")
