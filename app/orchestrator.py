@@ -459,10 +459,10 @@ class ModpackPipeline:
         self.log(f"1/4 · Planning gameplay requirements for {catalog} on Minecraft {mc}…")
         confirmed_lessons = load_confirmed_lessons(limit=8)
         plan_input = (
-            f"FIXED TARGET\\nMinecraft Java: {mc}\\nModloader: {loader}\\nCatalog: {catalog}\\n\\n"
-            f"USER'S MODPACK BRIEF (preserve its constraints):\\n{concept}\\n\\n"
+            f"FIXED TARGET\nMinecraft Java: {mc}\nModloader: {loader}\nCatalog: {catalog}\n\n"
+            f"USER'S MODPACK BRIEF (preserve its constraints):\n{concept}\n\n"
             f"CONFIRMED LESSONS FROM PREVIOUS ERROR ANALYSES (apply only when relevant): "
-            f"{json.dumps(confirmed_lessons, ensure_ascii=False)}\\n\\n"
+            f"{json.dumps(confirmed_lessons, ensure_ascii=False)}\n\n"
             "Describe gameplay requirements and catalog search terms. Do not name mods. Return JSON only."
         )
         raw_plan = self.llm.text(modpack_system(catalog), plan_input)
