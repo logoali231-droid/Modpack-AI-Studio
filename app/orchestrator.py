@@ -4,7 +4,7 @@ import json, shutil, datetime, re
 from .llm import LLMClient
 from .modrinth import Modrinth
 from .curseforge import CurseForge
-from .quests import build_chapter, validate_campaign
+from .quests import build_datapack, validate_campaign
 from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_SYSTEM
 
 
@@ -380,8 +380,8 @@ class ModpackPipeline:
         quest_status = {"status": "disabled"}
         if self.c.get("quests"):
             quest_status = {"status": "failed", "error": "Quest generation did not complete."}
-            self.progress(0, 0, "Ollama is generating your three-chapter quest campaign…")
-            self.log("4/4 · Designing a three-chapter quest campaign…")
+            self.progress(0, 0, "AI is generating your native three-chapter quest campaign…")
+            self.log("4/4 · Designing a native Minecraft advancement quest campaign…")
             self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names = ", ".join(item["name"] for item in installed)
             quest_input = f"Concept: {concept}\nMinecraft {mc} {loader}. Installed mods: {names}"
@@ -407,22 +407,49 @@ class ModpackPipeline:
                     )
                     campaign = validate_campaign(self.llm.json_from(repaired))
 
-                # Validate everything before writing any chapter files.
-                chapter_files = [
-                    build_chapter(chapter, index)
-                    for index, chapter in enumerate(campaign["chapters"], 1)
-                ]
-                output = mcdir / "config" / "ftbquests" / "quests" / "chapters"
-                output.mkdir(parents=True, exist_ok=True)
-                for index, content in enumerate(chapter_files, 1):
-                    self.progress(90 + index * 3, 100, f"Writing quest chapter {index} of 3…")
-                    (output / f"ai_chapter_{index}.snbt").write_text(content, encoding="utf-8")
-                    self.log(f"Quest draft written: ai_chapter_{index}.snbt")
+                # Build a self-contained vanilla datapack. No quest mod is required.
+                datapack_files = build_datapack(campaign, mc)
+                import zipfile
+                archive = mcdir / "Modpack_AI_Quests.zip"
+                with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as pack:
+                    for relative_path, content in datapack_files.items():
+                        pack.writestr(relative_path, content)
+
+                world_value = str(self.c.get("world_path", "")).strip()
+                installed_to_world = False
+                if world_value:
+                    world_root = Path(world_value).expanduser().resolve()
+                    if not world_root.is_dir() or not (world_root / "level.dat").is_file():
+                        raise ValueError(
+                            "The selected Minecraft world folder is invalid. Choose the world folder "
+                            "that contains level.dat, or leave the field empty to create a datapack ZIP."
+                        )
+                    datapacks_dir = world_root / "datapacks"
+                    datapacks_dir.mkdir(parents=True, exist_ok=True)
+                    destination = datapacks_dir / archive.name
+                    shutil.copy2(archive, destination)
+                    installed_to_world = True
+                    self.log(f"Custom quest datapack installed into world: {destination}")
+                else:
+                    destination = archive
+                    self.log(f"Custom quest datapack ZIP created: {archive}")
+                    self.log(
+                        "To use it, copy this ZIP into your world's datapacks folder, then run /reload "
+                        "or re-enter the world. Press L in-game to open the Advancements quest screen."
+                    )
+
                 quest_status = {
                     "status": "generated",
-                    "files": [f"ai_chapter_{index}.snbt" for index in range(1, 4)]
+                    "system": "minecraft_advancements_datapack",
+                    "file": archive.name,
+                    "installed_to_world": installed_to_world,
+                    "destination": str(destination),
+                    "access": "Press L (Advancements) in-game."
                 }
-                self.log("FTB Quests output is a draft; validate against the installed FTB Quests version in-game.")
+                self.log(
+                    "Native quest campaign generated. It uses Minecraft's built-in Advancements screen; "
+                    "FTB Quests and other quest mods are not required."
+                )
             except Exception as exc:
                 quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
                 self.log(
