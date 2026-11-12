@@ -8,12 +8,14 @@ from .quests import build_datapack, pack_format_for, validate_campaign
 from .dependency_verifier import verify_mod_directory
 from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_PLAN_SYSTEM, QUEST_CHAPTER_SYSTEM, ERROR_ANALYSIS_SYSTEM
 from .error_memory import load_confirmed_lessons, record_lesson, confirm_latest_lesson
+from .mod_database import ModDatabase
 
 
 class ModpackPipeline:
     def __init__(self, cfg, log, progress=None):
         self.c, self.log = cfg, log
         self.progress_cb = progress or (lambda value, maximum, message: None)
+        self.database = ModDatabase()
         self.llm = LLMClient(
             cfg["provider"], cfg.get("api_key", ""), cfg["model"], log,
             cfg.get("ollama_url", "http://localhost:11434")
@@ -22,6 +24,51 @@ class ModpackPipeline:
             CurseForge(log, cfg.get("curseforge_key", ""))
             if cfg.get("catalog") == "CurseForge" else Modrinth(log)
         )
+
+    def sync_catalog(self, query, source, mc, loader):
+        """Search one official catalog, fetch detailed project metadata, and cache it locally."""
+        source = str(source).strip().lower()
+        if source not in ("modrinth", "curseforge"):
+            raise ValueError("Choose Modrinth or CurseForge for an online catalog sync.")
+        api = Modrinth(self.log) if source == "modrinth" else CurseForge(
+            self.log, self.c.get("curseforge_key", "")
+        )
+        hits = api.search(str(query).strip(), str(mc).strip(), str(loader).strip())
+        saved = 0
+        failures = 0
+        for index, hit in enumerate(hits[:20], 1):
+            project_id = str(hit.get("project_id") or "").strip()
+            if not project_id:
+                continue
+            self.progress(index, min(len(hits[:20]), 20), f"Indexing {source}: {hit.get('name', project_id)}")
+            try:
+                details = api.details(project_id)
+                details["game_versions"] = details.get("game_versions") or [str(mc)]
+                details["loaders"] = details.get("loaders") or [str(loader)]
+                self.database.upsert(details)
+                saved += 1
+            except Exception as exc:
+                failures += 1
+                self.log(f"Could not index {source} project {project_id}: {exc}")
+                # Keep the searchable summary even when the full description endpoint fails.
+                try:
+                    self.database.upsert({
+                        "source": source,
+                        "project_id": project_id,
+                        "slug": hit.get("slug", ""),
+                        "name": hit.get("name") or project_id,
+                        "summary": hit.get("description", ""),
+                        "categories": hit.get("categories", []),
+                        "game_versions": [str(mc)],
+                        "loaders": [str(loader)],
+                        "downloads": hit.get("downloads", 0),
+                    })
+                    saved += 1
+                except Exception:
+                    pass
+        stats = self.database.stats()
+        self.log(f"Catalog sync complete: {saved} project(s) saved, {failures} detail error(s).")
+        return {"saved": saved, "failures": failures, "stats": stats}
 
     def progress(self, value, maximum, message):
         self.progress_cb(value, maximum, message)
@@ -151,10 +198,31 @@ class ModpackPipeline:
                 project_id = str(hit.get("project_id") or hit.get("slug") or "").strip()
                 if not project_id or project_id in candidate_meta:
                     continue
+                cached = self.database.get(
+                    str(self.c.get("catalog", "Modrinth")).lower(), project_id
+                )
+                summary = {
+                    "source": str(self.c.get("catalog", "Modrinth")).lower(),
+                    "project_id": project_id,
+                    "slug": hit.get("slug", ""),
+                    "name": str(hit.get("name") or project_id),
+                    "summary": str(hit.get("description") or "")[:1000],
+                    "categories": hit.get("categories") or [],
+                    "game_versions": [mc],
+                    "loaders": [loader],
+                    "downloads": hit.get("downloads", 0),
+                }
+                try:
+                    self.database.upsert(summary)
+                except ValueError:
+                    pass
                 candidate_meta[project_id] = {
                     "project_id": project_id,
                     "name": str(hit.get("name") or project_id),
-                    "description": str(hit.get("description") or "")[:350],
+                    "description": (
+                        cached.get("description") or cached.get("summary")
+                        if cached else str(hit.get("description") or "")
+                    )[:1600],
                     "categories": hit.get("categories") or [],
                     "downloads": hit.get("downloads", 0),
                 }
@@ -255,6 +323,13 @@ class ModpackPipeline:
                 "No mods were downloaded."
             )
         self.log(f"AI selected {len(selected)} verified projects.")
+        source = str(catalog).lower()
+        for project_id in selected:
+            try:
+                details = self.api.details(project_id)
+                self.database.upsert(details)
+            except Exception as exc:
+                self.log(f"Could not cache full description for {project_id}: {exc}")
         return selected
 
 
