@@ -67,10 +67,23 @@ class Worker(QThread):
     def run(self):
         try:
             pipeline = ModpackPipeline(self.cfg, self.log.emit, self.progress.emit)
-            if self.cfg.get("phase") == "choose_version":
+            phase = self.cfg.get("phase")
+            if phase == "choose_version":
                 version, reason = pipeline.prepare_version()
                 self.done.emit(True, f"Minecraft {version} selected. Create a matching Prism instance, then continue.", {
                     "phase": "version_ready", "version": version, "reason": reason
+                })
+                return
+            if phase == "error_auto_fix":
+                diagnosis = pipeline.diagnose_and_learn(self.cfg.get("error_text", ""))
+                self.done.emit(True, "Error analysis saved. Review the diagnosis and confirm the lesson if it is accurate.", {
+                    "phase": "diagnosis_ready", "diagnosis": diagnosis
+                })
+                return
+            if phase == "retry_quests":
+                result = pipeline.retry_quests_only()
+                self.done.emit(bool(result.get("success")), result.get("message", "Quest retry finished."), {
+                    "phase": "quests_retried", **result
                 })
                 return
             result = pipeline.run()
@@ -273,6 +286,40 @@ class MainWindow(QMainWindow):
         activity_layout.addWidget(self.log, 1)
         tabs.addTab(activity_page, "Activity")
 
+        error_page = QWidget()
+        error_layout = QVBoxLayout(error_page)
+        error_layout.setContentsMargins(12, 14, 12, 12)
+        error_layout.addWidget(QLabel(
+            "Paste a Minecraft/Forge/Prism or app error log, or analyze the current Activity log. "
+            "The model diagnoses and records a lesson. It does not silently edit code or delete files."
+        ))
+        self.error_input = QTextEdit()
+        self.error_input.setPlaceholderText("Paste the complete relevant error log here…")
+        self.error_input.setMinimumHeight(150)
+        error_layout.addWidget(self.error_input)
+        error_actions = QHBoxLayout()
+        self.analyze_button = QPushButton("Error Auto Fix · Analyze")
+        self.analyze_button.clicked.connect(self.analyze_error)
+        self.analyze_log_button = QPushButton("Use Activity log")
+        self.analyze_log_button.setObjectName("secondaryButton")
+        self.analyze_log_button.clicked.connect(lambda: self.error_input.setPlainText(self.log.toPlainText()))
+        self.confirm_lesson_button = QPushButton("Confirm latest lesson")
+        self.confirm_lesson_button.setObjectName("secondaryButton")
+        self.confirm_lesson_button.clicked.connect(self.confirm_error_lesson)
+        error_actions.addWidget(self.analyze_button)
+        error_actions.addWidget(self.analyze_log_button)
+        error_actions.addWidget(self.confirm_lesson_button)
+        error_layout.addLayout(error_actions)
+        self.error_output = QTextEdit()
+        self.error_output.setReadOnly(True)
+        self.error_output.setPlaceholderText("The diagnosis and safe repair steps will appear here.")
+        error_layout.addWidget(self.error_output, 1)
+        self.retry_quests_button = QPushButton("Retry quest generation only · do not reinstall mods")
+        self.retry_quests_button.setObjectName("secondaryButton")
+        self.retry_quests_button.clicked.connect(self.retry_quests)
+        error_layout.addWidget(self.retry_quests_button)
+        tabs.addTab(error_page, "Error Auto Fix")
+
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
         self.model.currentTextChanged.connect(self.model_changed)
@@ -412,6 +459,61 @@ class MainWindow(QMainWindow):
         else:
             self.continue_generation()
 
+    def analyze_error(self):
+        error_text = self.error_input.toPlainText().strip()
+        if not error_text:
+            QMessageBox.warning(self, "No error log", "Paste a log or click 'Use Activity log' first.")
+            return
+        cfg = self.build_ai_config()
+        if cfg is None:
+            return
+        cfg["phase"] = "error_auto_fix"
+        cfg["error_text"] = error_text
+        self.launch_worker(cfg)
+
+    def retry_quests(self):
+        cfg = self.build_ai_config()
+        if cfg is None:
+            return
+        instance = Path(self.instance.text()).expanduser()
+        if not instance.is_dir():
+            QMessageBox.warning(
+                self, "Prism instance required",
+                "Select the Prism instance where this app installed the mods. Quest retry will not reinstall or modify mods."
+            )
+            return
+        cfg["instance"] = str(instance)
+        cfg["world_path"] = self.world_path.text().strip()
+        cfg["phase"] = "retry_quests"
+        self.launch_worker(cfg)
+
+    def confirm_error_lesson(self):
+        from .error_memory import confirm_latest_lesson
+        if confirm_latest_lesson():
+            QMessageBox.information(
+                self, "Lesson confirmed",
+                "The latest unverified lesson is now eligible to be included in future AI error analyses and generation prompts."
+            )
+        else:
+            QMessageBox.information(self, "No pending lesson", "There is no unverified lesson to confirm.")
+
+    def build_ai_config(self):
+        selected_provider = self.provider.currentText()
+        provider = "Ollama" if selected_provider.startswith("Ollama") else selected_provider
+        key = self.key.text().strip()
+        if provider != "Ollama":
+            if not key:
+                key = keyring.get_password(SERVICE, provider) or ""
+            if not key:
+                QMessageBox.warning(self, "API key required", "Enter an API key or use local Ollama.")
+                return None
+        return {
+            "provider": provider, "model": self.model.currentText().strip(),
+            "api_key": key, "ollama_url": self.ollama.text().strip(),
+            "version": self.version.text().strip(), "loader": self.loader.currentText(),
+            "prompt": self.prompt.toPlainText(), "world_path": self.world_path.text().strip()
+        }
+
     def build_config(self, include_instance=False):
         selected_provider = self.provider.currentText()
         provider = "Ollama" if selected_provider.startswith("Ollama") else selected_provider
@@ -457,6 +559,10 @@ class MainWindow(QMainWindow):
 
     def launch_worker(self, cfg):
         self.runbtn.setEnabled(False)
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setEnabled(False)
         self.log.clear() if cfg.get("phase") == "choose_version" else None
         self.elapsed.start()
         self.clock.start()
@@ -508,6 +614,10 @@ class MainWindow(QMainWindow):
     def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setEnabled(True)
         payload = payload or {}
         if ok and payload.get("phase") == "version_ready":
             self.selected_version = payload["version"]
@@ -536,6 +646,18 @@ class MainWindow(QMainWindow):
                 f"and the {self.loader.currentText()} loader, then return here and select that instance folder. "
                 "The app will wait until you click Continue."
             )
+            return
+
+        if payload.get("phase") == "diagnosis_ready":
+            diagnosis = payload.get("diagnosis", {})
+            import json
+            self.error_output.setPlainText(json.dumps(diagnosis, ensure_ascii=False, indent=2))
+            self.statusBar().showMessage(message)
+            QMessageBox.information(self, "Diagnosis complete", message)
+            return
+        if payload.get("phase") == "quests_retried":
+            self.statusBar().showMessage(message)
+            QMessageBox.information(self, "Quest retry", message)
             return
 
         if ok:
