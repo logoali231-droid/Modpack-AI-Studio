@@ -16,10 +16,42 @@ class ModpackPipeline:
         for p in (root/".minecraft",root/"minecraft",root):
             if p.is_dir() and (p.name==".minecraft" or (p/"mods").exists() or (p/"config").exists()): return p
         raise ValueError("Could not identify the Minecraft directory in this Prism instance.")
+    def select_minecraft_version(self, concept, fallback):
+        """Ask the AI for a target release, then validate it against known released versions."""
+        self.log("AI: choosing a Minecraft release based on your modpack description…")
+        system=(
+            'You are selecting a Minecraft Java Edition version for a modpack. Return ONLY JSON: '
+            '{"minecraft_version":"exact release number","reason":"brief explanation"}. '
+            'Choose a stable RELEASE version, not a snapshot, pre-release, or future version. '
+            'Prioritize the gameplay, progression, and mod ecosystem requested by the user. '
+            'When the prompt names a version or mod with a known version requirement, respect it. '
+            'Otherwise prefer a well-supported release with a broad mod ecosystem, not automatically the newest release. '
+            'Never invent a version number.'
+        )
+        raw=self.llm.text(system,
+            "Modpack concept and requirements:\n"+concept+
+            "\nChoose the best Minecraft Java release for this specific pack. Return JSON only.")
+        choice=self.llm.json_from(raw)
+        if not isinstance(choice,dict): raise ValueError("AI version selection was not a JSON object.")
+        selected=str(choice.get("minecraft_version","")).strip()
+        if not selected: raise ValueError("AI did not return minecraft_version.")
+        # Use the official release list exposed by Modrinth's public version tags.
+        versions=Modrinth(self.log).game_versions()
+        if selected not in versions:
+            raise ValueError(f"AI selected Minecraft {selected}, but it is not a recognized release version. "
+                             "No files were downloaded. Disable automatic selection and choose a version manually.")
+        reason=str(choice.get("reason","No reason supplied.")).strip()
+        self.log(f"AI selected Minecraft {selected}. Reason: {reason}")
+        return selected, reason
     def run(self):
         mc,loader,concept=self.c["version"],self.c["loader"],self.c["prompt"]
+        auto_version=bool(self.c.get("auto_version",False))
+        if auto_version:
+            mc,version_reason=self.select_minecraft_version(concept,mc)
+        else:
+            version_reason="Selected manually by the user."
         catalog = self.c.get("catalog", "Modrinth")
-        self.log(f"1/4 · Designing the modpack for {catalog}…")
+        self.log(f"1/4 · Designing the modpack for {catalog} on Minecraft {mc}…")
         if catalog == "CurseForge":
             identity = '"name":"exact CurseForge project name"'
         else:
@@ -51,7 +83,7 @@ class ModpackPipeline:
                 if dep.get("dependency_type")=="required":
                     depid=dep.get("project_id")
                     if depid and depid not in resolved and depid not in seen: queue.append(depid)
-        if not resolved: raise RuntimeError(f"No compatible {catalog} files found for this Minecraft version/loader.")
+        if not resolved: raise RuntimeError(f"No compatible {catalog} files found for Minecraft {mc}/{loader}.")
         self.log(f"Found {len(resolved)} compatible projects including required dependencies.")
         mcdir=self.minecraft_dir(); modsdir=mcdir/"mods"; modsdir.mkdir(parents=True,exist_ok=True)
         self.log("3/4 · Installing verified JAR files…")
@@ -65,7 +97,8 @@ class ModpackPipeline:
                 installed.append({"name":item["name"],"project_id":item["project_id"],"version_id":item["version_id"],"file":path.name})
             except Exception as exc:
                 failed.append({"file":item["name"],"error":str(exc)}); self.log(f"Download failed: {item['name']}: {exc}")
-        manifest={"app":"Modpack AI Studio","minecraft":mc,"loader":loader,"catalog":catalog,"concept":concept,
+        manifest={"app":"Modpack AI Studio","minecraft":mc,"minecraft_version_selection":"ai" if auto_version else "manual",
+            "minecraft_version_reason":version_reason,"loader":loader,"catalog":catalog,"concept":concept,
             "created":datetime.datetime.now(datetime.timezone.utc).isoformat(),"installed":installed,"failed":failed}
         (mcdir/"modpack-ai-manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
         self.log(f"Installed {len(installed)} files; {len(failed)} failed. Manifest saved.")
