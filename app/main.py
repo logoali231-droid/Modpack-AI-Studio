@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt
 import keyring
+from .mod_database import ModDatabase
 from .orchestrator import ModpackPipeline
 
 SERVICE = "modpack-ai-studio"
@@ -78,6 +79,17 @@ class Worker(QThread):
                 diagnosis = pipeline.diagnose_and_learn(self.cfg.get("error_text", ""))
                 self.done.emit(True, "Error analysis saved. Review the diagnosis and confirm the lesson if it is accurate.", {
                     "phase": "diagnosis_ready", "diagnosis": diagnosis
+                })
+                return
+            if phase == "catalog_sync":
+                result = pipeline.sync_catalog(
+                    self.cfg.get("catalog_query", ""),
+                    self.cfg.get("catalog_source", "modrinth"),
+                    self.cfg.get("catalog_version", "1.20.1"),
+                    self.cfg.get("catalog_loader", "forge")
+                )
+                self.done.emit(True, f"Indexed {result['saved']} mod project(s) into the local database.", {
+                    "phase": "catalog_synced", **result
                 })
                 return
             if phase == "retry_quests":
@@ -320,6 +332,56 @@ class MainWindow(QMainWindow):
         error_layout.addWidget(self.retry_quests_button)
         tabs.addTab(error_page, "Error Auto Fix")
 
+        library_page = QWidget()
+        library_layout = QVBoxLayout(library_page)
+        library_layout.setContentsMargins(12, 14, 12, 12)
+        library_layout.addWidget(QLabel(
+            "Local SQLite library of mod metadata from Modrinth and CurseForge. "
+            "It grows as you sync catalogs and generate modpacks. Descriptions and compatibility tags are cached locally."
+        ))
+        library_form = QFormLayout()
+        self.library_query = QLineEdit()
+        self.library_query.setPlaceholderText("Search name, description, category, or gameplay feature…")
+        self.library_filter = QComboBox()
+        self.library_filter.addItems(["All sources", "Modrinth", "CurseForge"])
+        self.library_version = QLineEdit("1.16.5")
+        self.library_loader = QComboBox()
+        self.library_loader.addItems(["forge", "fabric", "neoforge", "quilt"])
+        self.library_source = QComboBox()
+        self.library_source.addItems(["Modrinth", "CurseForge"])
+        self.library_cf_key = QLineEdit()
+        self.library_cf_key.setEchoMode(QLineEdit.Password)
+        self.library_cf_key.setPlaceholderText("Your personal CurseForge API key (stored in desktop keyring)")
+        try:
+            self.library_cf_key.setText(keyring.get_password(SERVICE, "curseforge-catalog") or "")
+        except Exception:
+            pass
+        library_form.addRow("Search local database", self.library_query)
+        library_form.addRow("Show source", self.library_filter)
+        library_form.addRow("Online catalog to sync", self.library_source)
+        library_form.addRow("Minecraft version", self.library_version)
+        library_form.addRow("Loader", self.library_loader)
+        library_form.addRow("CurseForge API key", self.library_cf_key)
+        library_layout.addLayout(library_form)
+        library_actions = QHBoxLayout()
+        self.library_search_button = QPushButton("Search local library")
+        self.library_search_button.clicked.connect(self.search_mod_library)
+        self.library_sync_button = QPushButton("Sync from selected catalog")
+        self.library_sync_button.clicked.connect(self.sync_mod_library)
+        self.library_sync_button.setObjectName("secondaryButton")
+        library_actions.addWidget(self.library_search_button)
+        library_actions.addWidget(self.library_sync_button)
+        library_layout.addLayout(library_actions)
+        self.library_stats = QLabel("Local database: initializing…")
+        self.library_stats.setObjectName("subtitle")
+        library_layout.addWidget(self.library_stats)
+        self.library_results = QTextEdit()
+        self.library_results.setReadOnly(True)
+        self.library_results.setPlaceholderText("Search the local library or sync compatible projects from an official catalog.")
+        library_layout.addWidget(self.library_results, 1)
+        tabs.addTab(library_page, "Mod Library")
+        self.refresh_library_stats()
+
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
         self.model.currentTextChanged.connect(self.model_changed)
@@ -459,6 +521,86 @@ class MainWindow(QMainWindow):
         else:
             self.continue_generation()
 
+    def refresh_library_stats(self):
+        try:
+            stats = ModDatabase().stats()
+            modrinth = stats.get("modrinth", {}).get("total", 0)
+            curseforge = stats.get("curseforge", {}).get("total", 0)
+            self.library_stats.setText(
+                f"Local database: {modrinth} Modrinth project(s) · {curseforge} CurseForge project(s)"
+            )
+        except Exception as exc:
+            self.library_stats.setText(f"Database unavailable: {exc}")
+
+    def search_mod_library(self):
+        from html import escape
+        query = self.library_query.text().strip()
+        source = self.library_filter.currentText().lower()
+        source = "all" if source == "all sources" else source
+        try:
+            records = ModDatabase().search(query, source=source, limit=100)
+        except Exception as exc:
+            QMessageBox.warning(self, "Database error", str(exc))
+            return
+        if not records:
+            self.library_results.setPlainText(
+                "No local results yet. Use 'Sync from selected catalog' to import official catalog records."
+            )
+            return
+        sections = []
+        for item in records:
+            sections.append(
+                f"{item['name']} [{item['source'].upper()} · {item['project_id']}]\n"
+                f"Summary: {item['summary']}\n"
+                f"Description:\n{item['description'] or '(Full description not cached yet)'}\n"
+                f"Authors: {', '.join(item['authors']) or 'Unknown'}\n"
+                f"Categories: {', '.join(item['categories'])}\n"
+                f"Minecraft: {', '.join(item['game_versions'])}\n"
+                f"Loaders: {', '.join(item['loaders'])}\n"
+                f"Downloads: {item['downloads']:,}\n"
+                f"License: {item['license'] or 'Not listed'}\n"
+                f"Website: {item['website'] or 'Not listed'}\n"
+                f"Icon: {item['icon_url'] or 'Not listed'}\n"
+                f"Last synced: {item['last_synced']}"
+            )
+        self.library_results.setPlainText("\n\n" + ("\n\n" + ("-" * 72) + "\n\n").join(sections))
+        self.refresh_library_stats()
+
+    def sync_mod_library(self):
+        query = self.library_query.text().strip()
+        if not query:
+            QMessageBox.warning(self, "Search term required", "Enter a mod name, category, or feature to sync.")
+            return
+        source = self.library_source.currentText()
+        api_key = self.library_cf_key.text().strip()
+        if source == "CurseForge":
+            if not api_key:
+                try:
+                    api_key = keyring.get_password(SERVICE, "curseforge-catalog") or ""
+                except Exception:
+                    api_key = ""
+            if not api_key:
+                QMessageBox.warning(
+                    self, "CurseForge API key required",
+                    "CurseForge's official API requires your own API key. It is stored in the desktop keyring, not in the database."
+                )
+                return
+            try:
+                keyring.set_password(SERVICE, "curseforge-catalog", api_key)
+            except Exception as exc:
+                QMessageBox.warning(self, "Keyring unavailable", str(exc))
+                return
+        cfg = {
+            "provider": "Ollama", "model": "qwen2.5:3b", "api_key": "",
+            "ollama_url": "http://localhost:11434",
+            "catalog": source, "curseforge_key": api_key,
+            "catalog_query": query, "catalog_source": source.lower(),
+            "catalog_version": self.library_version.text().strip(),
+            "catalog_loader": self.library_loader.currentText(),
+            "phase": "catalog_sync"
+        }
+        self.launch_worker(cfg)
+
     def analyze_error(self):
         error_text = self.error_input.toPlainText().strip()
         if not error_text:
@@ -559,7 +701,7 @@ class MainWindow(QMainWindow):
 
     def launch_worker(self, cfg):
         self.runbtn.setEnabled(False)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(False)
@@ -614,7 +756,7 @@ class MainWindow(QMainWindow):
     def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(True)
@@ -654,6 +796,12 @@ class MainWindow(QMainWindow):
             self.error_output.setPlainText(json.dumps(diagnosis, ensure_ascii=False, indent=2))
             self.statusBar().showMessage(message)
             QMessageBox.information(self, "Diagnosis complete", message)
+            return
+        if payload.get("phase") == "catalog_synced":
+            self.refresh_library_stats()
+            self.search_mod_library()
+            self.statusBar().showMessage(message)
+            QMessageBox.information(self, "Mod library updated", message)
             return
         if payload.get("phase") == "quests_retried":
             self.statusBar().showMessage(message)
