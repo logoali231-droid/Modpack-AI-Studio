@@ -43,8 +43,8 @@ class ModpackPipeline:
             self.progress(index, min(len(hits[:20]), 20), f"Indexing {source}: {hit.get('name', project_id)}")
             try:
                 details = api.details(project_id)
-                details["game_versions"] = details.get("game_versions") or [str(mc)]
-                details["loaders"] = details.get("loaders") or [str(loader)]
+                details["game_versions"] = sorted(set(details.get("game_versions") or []) | {str(mc)})
+                details["loaders"] = sorted(set(details.get("loaders") or []) | {str(loader)})
                 self.database.upsert(details)
                 saved += 1
             except Exception as exc:
@@ -327,6 +327,8 @@ class ModpackPipeline:
         for project_id in selected:
             try:
                 details = self.api.details(project_id)
+                details["game_versions"] = sorted(set(details.get("game_versions") or []) | {str(mc)})
+                details["loaders"] = sorted(set(details.get("loaders") or []) | {str(loader)})
                 self.database.upsert(details)
             except Exception as exc:
                 self.log(f"Could not cache full description for {project_id}: {exc}")
