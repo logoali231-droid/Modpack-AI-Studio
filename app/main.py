@@ -98,6 +98,20 @@ class Worker(QThread):
                     "phase": "quests_retried", **result
                 })
                 return
+            if phase == "structure_generate":
+                from .structure_generator import generate_structure
+                result = generate_structure(
+                    pipeline.llm,
+                    self.cfg.get("structure_description", ""),
+                    self.cfg.get("structure_version", "1.16.5"),
+                    self.cfg.get("structure_output", ""),
+                    self.log.emit,
+                    self.progress.emit
+                )
+                self.done.emit(True, "Structure generated successfully.", {
+                    "phase": "structure_generated", **result
+                })
+                return
             result = pipeline.run()
             if isinstance(result, dict):
                 self.done.emit(bool(result.get("success", True)), result.get(
@@ -382,6 +396,51 @@ class MainWindow(QMainWindow):
         tabs.addTab(library_page, "Mod Library")
         self.refresh_library_stats()
 
+        structure_page = QWidget()
+        structure_layout = QVBoxLayout(structure_page)
+        structure_layout.setContentsMargins(12, 14, 12, 12)
+        structure_layout.addWidget(QLabel(
+            "Describe a custom Minecraft building. Qwen designs a compact blueprint; "
+            "the procedural builder creates the blocks and exports a vanilla structure NBT. "
+            "The first exporter targets Minecraft Java 1.16.5."
+        ))
+        structure_form = QFormLayout()
+        self.structure_version = QComboBox()
+        self.structure_version.addItem("Minecraft Java 1.16.5")
+        self.structure_description = QTextEdit()
+        self.structure_description.setMinimumHeight(180)
+        self.structure_description.setPlaceholderText(
+            "Example: An abandoned medieval watchtower, 3 floors, mossy stone, "
+            "a library, a hidden treasure room, a balcony and a broken roof. "
+            "Keep it compact and suitable for survival."
+        )
+        self.structure_output = QLineEdit(
+            str(Path.home() / "Modpack-AI-Studio" / "generated_structures" / "custom_structure.nbt")
+        )
+        structure_browse = QPushButton("Save as…")
+        structure_browse.setObjectName("secondaryButton")
+        structure_browse.clicked.connect(self.browse_structure_output)
+        structure_output_row = QHBoxLayout()
+        structure_output_row.addWidget(self.structure_output, 1)
+        structure_output_row.addWidget(structure_browse)
+        structure_form.addRow("Target version", self.structure_version)
+        structure_form.addRow("Output file", structure_output_row)
+        structure_layout.addLayout(structure_form)
+        structure_layout.addWidget(QLabel(
+            "Current limits: 9–25 blocks wide/deep, 1–4 floors, bounded vanilla palette. "
+            "This creates an importable structure file, not automatic world generation. "
+            "Do not open the output in a text editor."
+        ))
+        self.structure_generate_button = QPushButton("Generate custom structure with AI")
+        self.structure_generate_button.setMinimumHeight(42)
+        self.structure_generate_button.clicked.connect(self.generate_structure)
+        structure_layout.addWidget(self.structure_generate_button)
+        self.structure_result = QTextEdit()
+        self.structure_result.setReadOnly(True)
+        self.structure_result.setPlaceholderText("Blueprint summary, block count and output path will appear here.")
+        structure_layout.addWidget(self.structure_result, 1)
+        tabs.addTab(structure_page, "Structure Designer")
+
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
         self.model.currentTextChanged.connect(self.model_changed)
@@ -514,6 +573,38 @@ class MainWindow(QMainWindow):
                 )
                 return
             self.world_path.setText(path)
+
+    def browse_structure_output(self):
+        current = self.structure_output.text().strip()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Minecraft structure", current or str(Path.home() / "custom_structure.nbt"),
+            "Minecraft structure (*.nbt)"
+        )
+        if path:
+            if not path.lower().endswith(".nbt"):
+                path += ".nbt"
+            self.structure_output.setText(path)
+
+    def generate_structure(self):
+        description = self.structure_description.toPlainText().strip()
+        output = self.structure_output.text().strip()
+        if not description:
+            QMessageBox.warning(self, "Structure description required", "Describe the building you want to create.")
+            return
+        if not output:
+            QMessageBox.warning(self, "Output path required", "Choose where to save the .nbt structure file.")
+            return
+        if Path(output).suffix.lower() != ".nbt":
+            QMessageBox.warning(self, "Invalid output", "The output filename must end in .nbt.")
+            return
+        cfg = self.build_ai_config()
+        if cfg is None:
+            return
+        cfg["phase"] = "structure_generate"
+        cfg["structure_description"] = description
+        cfg["structure_version"] = "1.16.5"
+        cfg["structure_output"] = str(Path(output).expanduser())
+        self.launch_worker(cfg)
 
     def start(self):
         if self.phase == "choose_version":
@@ -704,7 +795,7 @@ class MainWindow(QMainWindow):
 
     def launch_worker(self, cfg):
         self.runbtn.setEnabled(False)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(False)
@@ -809,6 +900,27 @@ class MainWindow(QMainWindow):
         if payload.get("phase") == "quests_retried":
             self.statusBar().showMessage(message)
             QMessageBox.information(self, "Quest retry", message)
+            return
+        if payload.get("phase") == "structure_generated":
+            import json
+            result = {
+                "name": payload.get("name"),
+                "minecraft": payload.get("minecraft"),
+                "dimensions": payload.get("dimensions"),
+                "block_count": payload.get("block_count"),
+                "file": payload.get("file"),
+                "blueprint": payload.get("blueprint"),
+            }
+            self.structure_result.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
+            self.statusBar().showMessage(message)
+            QMessageBox.information(
+                self, "Structure generated",
+                f"{payload.get('name')}\n"
+                f"Dimensions: {' × '.join(str(v) for v in payload.get('dimensions', []))}\n"
+                f"Blocks: {payload.get('block_count', 0):,}\n\n"
+                f"Saved to:\n{payload.get('file')}\n\n"
+                "Import this .nbt with a compatible structure tool or a Minecraft Structure Block."
+            )
             return
 
         if ok:
