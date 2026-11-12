@@ -34,6 +34,29 @@ def record_lesson(diagnosis, model, provider):
     path = memory_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    report = path.with_name("error_lessons.md")
+    lines = [
+        "# Modpack AI Studio · Error Auto Fix lessons",
+        "",
+        "These are model-generated diagnoses, not verified facts. Only entries marked CONFIRMED",
+        "are reused as context in future AI runs. This file does not train model weights.",
+        ""
+    ]
+    for index, item in enumerate(data["lessons"], 1):
+        diagnosis = item.get("diagnosis", {})
+        lines.extend([
+            f"## {index}. {diagnosis.get('summary', 'Unlabeled diagnosis')}",
+            f"- Status: {item.get('status', 'unverified')}",
+            f"- Created: {item.get('created_at', 'unknown')}",
+            f"- Model: {item.get('model', 'unknown')} ({item.get('provider', 'unknown')})",
+            f"- Likely cause: {diagnosis.get('likely_cause', 'Not supplied')}",
+            f"- Reusable lesson: {diagnosis.get('reusable_lesson', 'Not supplied')}",
+            ""
+        ])
+        for step in diagnosis.get("safe_fix_steps", []):
+            lines.append(f"- Suggested step: {step}")
+        lines.append("")
+    report.write_text("\\n".join(lines), encoding="utf-8")
     return path
 
 def confirm_latest_lesson():
