@@ -1,6 +1,10 @@
 import sys
+import shutil
+import subprocess
 from pathlib import Path
 from datetime import timedelta
+
+import requests
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QTextEdit, QPushButton, QLabel, QProgressBar,
@@ -141,10 +145,23 @@ class MainWindow(QMainWindow):
 
         self.provider = QComboBox()
         self.provider.addItems(["Ollama (local, free)", "OpenAI", "Google Gemini"])
-        self.model = QLineEdit("qwen2.5:3b")
+        self.model = QComboBox()
+        self.model.setEditable(True)
+        self.model.addItem("qwen2.5:3b")
+        self.model.setCurrentText("qwen2.5:3b")
+        self.model.setMinimumWidth(220)
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.Password)
         self.ollama = QLineEdit("http://localhost:11434")
+        self.ollama_start = QPushButton("Start Ollama")
+        self.ollama_start.setObjectName("secondaryButton")
+        self.ollama_start.clicked.connect(self.start_ollama)
+        self.ollama_refresh = QPushButton("Refresh models")
+        self.ollama_refresh.setObjectName("secondaryButton")
+        self.ollama_refresh.clicked.connect(self.refresh_ollama_models)
+        self.ollama_status = QLabel("Checking local Ollama…")
+        self.ollama_status.setObjectName("subtitle")
+        self._ollama_start_attempts = 0
         self.auto_version = QCheckBox("AI chooses the Minecraft version from my prompt")
         self.auto_version.setChecked(True)
         self.version = QLineEdit("1.20.1")
@@ -165,9 +182,16 @@ class MainWindow(QMainWindow):
         instance_row.addWidget(browse)
 
         grid.addRow("AI provider", self.provider)
-        grid.addRow("Model", self.model)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model, 1)
+        model_row.addWidget(self.ollama_refresh)
+        grid.addRow("Model", model_row)
         grid.addRow("API key", self.key)
-        grid.addRow("Ollama URL", self.ollama)
+        ollama_row = QHBoxLayout()
+        ollama_row.addWidget(self.ollama, 1)
+        ollama_row.addWidget(self.ollama_start)
+        grid.addRow("Ollama server", ollama_row)
+        grid.addRow("Ollama status", self.ollama_status)
         grid.addRow(self.auto_version)
         grid.addRow("Manual Minecraft version", self.version)
         grid.addRow("Modloader", self.loader)
@@ -234,6 +258,8 @@ class MainWindow(QMainWindow):
 
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
+        self.model.currentTextChanged.connect(self.model_changed)
+        QTimer.singleShot(250, self.refresh_ollama_models)
         self.auto_version.setEnabled(False)
         self.version.setReadOnly(True)
         self.version.setEnabled(False)
@@ -244,10 +270,108 @@ class MainWindow(QMainWindow):
         local = provider.startswith("Ollama")
         self.key.setEnabled(not local)
         self.ollama.setEnabled(local)
-        self.model.setText(
-            "qwen2.5:3b" if local else
-            ("gpt-4.1-mini" if provider == "OpenAI" else "gemini-2.5-flash")
+        self.ollama_start.setEnabled(local)
+        self.ollama_refresh.setEnabled(local)
+        self.model.setEnabled(True)
+        if local:
+            self.model.setCurrentText("qwen2.5:3b")
+            self.ollama_status.setText("Local model server · Ollama")
+        else:
+            self.model.setCurrentText(
+                "gpt-4.1-mini" if provider == "OpenAI" else "gemini-2.5-flash"
+            )
+            self.ollama_status.setText("Ollama controls are available with the local provider.")
+
+    def ollama_base_url(self):
+        return self.ollama.text().strip().rstrip("/")
+
+    def check_ollama(self):
+        try:
+            response = requests.get(f"{self.ollama_base_url()}/api/tags", timeout=1.5)
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError):
+            return None
+
+    def refresh_ollama_models(self):
+        if not self.provider.currentText().startswith("Ollama"):
+            return
+        data = self.check_ollama()
+        if data is None:
+            self.ollama_status.setText("Offline · click Start Ollama")
+            return
+        models = [
+            item.get("name", "")
+            for item in data.get("models", [])
+            if isinstance(item, dict) and item.get("name")
+        ]
+        selected = self.model.currentText().strip()
+        self.model.blockSignals(True)
+        self.model.clear()
+        self.model.addItems(models)
+        if selected and self.model.findText(selected) < 0:
+            self.model.addItem(selected)
+        if selected:
+            self.model.setCurrentText(selected)
+        elif models:
+            self.model.setCurrentIndex(0)
+        self.model.blockSignals(False)
+        self.ollama_status.setText(
+            f"Online · {len(models)} model(s) installed" if models
+            else "Online · no models installed. Use 'ollama pull model-name' to add one."
         )
+
+    def model_changed(self, _model):
+        # The selected model is read from the combo when the generation starts.
+        pass
+
+    def start_ollama(self):
+        if not self.provider.currentText().startswith("Ollama"):
+            self.provider.setCurrentText("Ollama (local, free)")
+        if self.check_ollama() is not None:
+            self.ollama_status.setText("Online · Ollama is already running")
+            self.refresh_ollama_models()
+            return
+        executable = shutil.which("ollama")
+        if not executable:
+            QMessageBox.warning(
+                self, "Ollama not found",
+                "The ollama command was not found. Install Ollama first, then click Start Ollama again."
+            )
+            self.ollama_status.setText("Not installed · install Ollama first")
+            return
+        try:
+            subprocess.Popen(
+                [executable, "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "Could not start Ollama", str(exc))
+            return
+        self._ollama_start_attempts = 0
+        self.ollama_start.setEnabled(False)
+        self.ollama_status.setText("Starting Ollama…")
+        QTimer.singleShot(700, self.poll_ollama_startup)
+
+    def poll_ollama_startup(self):
+        data = self.check_ollama()
+        if data is not None:
+            self.ollama_start.setEnabled(self.provider.currentText().startswith("Ollama"))
+            self.refresh_ollama_models()
+            return
+        self._ollama_start_attempts += 1
+        if self._ollama_start_attempts >= 20:
+            self.ollama_start.setEnabled(self.provider.currentText().startswith("Ollama"))
+            self.ollama_status.setText("Could not connect · check the Ollama service and URL")
+            QMessageBox.warning(
+                self, "Ollama did not start",
+                "Ollama did not respond at the configured URL. Check whether another service is using the port "
+                "or whether the Ollama server is installed correctly."
+            )
+            return
+        QTimer.singleShot(500, self.poll_ollama_startup)
 
     def browse(self):
         path = QFileDialog.getExistingDirectory(self, "Select Prism Launcher instance")
@@ -283,7 +407,7 @@ class MainWindow(QMainWindow):
 
         cfg = {
             "provider": provider,
-            "model": self.model.text().strip(),
+            "model": self.model.currentText().strip(),
             "api_key": key,
             "ollama_url": self.ollama.text().strip(),
             "version": self.version.text().strip(),
