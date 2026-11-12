@@ -611,13 +611,10 @@ class ModpackPipeline:
             self.log("4/4 · Designing a native Minecraft advancement quest campaign…")
             self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names = ", ".join(item["name"] for item in installed)
-            quest_input = f"Concept: {concept}\nMinecraft {mc} {loader}. Installed mods: {names}"
             try:
-                try:
                 quest_status = self._write_quest_datapack(
                     mc, concept, names, mcdir, world_value
                 )
-
             except Exception as exc:
                 quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
                 self.log(
