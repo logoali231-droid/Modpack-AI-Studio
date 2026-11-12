@@ -36,8 +36,9 @@ class Modrinth:
                     "dependencies":v.get("dependencies",[]),"project":identifier}
         self.log(f"No compatible {mc}/{loader} JAR: {identifier}"); return None
     def search(self,query,mc,loader):
-        data=self.get(f"{API}/search",{"query":query,"facets":f'[["versions:{mc}"],["categories:{loader}"]]','limit':8})
-        hits=data.get("hits",[]); return hits[0] if hits else None
+        """Return candidate projects; callers must verify the title and compatible JAR."""
+        data=self.get(f"{API}/search",{"query":query,"facets":f'[["versions:{mc}"],["categories:{loader}"]]','limit':20})
+        return data.get("hits",[])
     def download(self,mod,dest):
         dest=Path(dest); dest.mkdir(parents=True,exist_ok=True); name=Path(mod["name"]).name
         if not name.endswith(".jar") or name in (".",".."): raise ValueError(f"Unsafe filename: {name}")
