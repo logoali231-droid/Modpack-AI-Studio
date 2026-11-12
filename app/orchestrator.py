@@ -10,11 +10,11 @@ class ModpackPipeline:
     def __init__(self,cfg,log,progress=None):
         self.c,self.log=cfg,log
         self.progress_cb=progress or (lambda value,maximum,message: None)
-    def progress(self,value,maximum,message):
-        self.progress_cb(value,maximum,message)
         self.llm=LLMClient(cfg["provider"],cfg.get("api_key",""),cfg["model"],log,cfg.get("ollama_url","http://localhost:11434"))
         self.api = (CurseForge(log, cfg.get("curseforge_key", ""))
                     if cfg.get("catalog") == "CurseForge" else Modrinth(log))
+    def progress(self,value,maximum,message):
+        self.progress_cb(value,maximum,message)
     def minecraft_dir(self):
         root=Path(self.c["instance"]).expanduser().resolve()
         # Prism stores game files in instance/minecraft, even before mods/config exist.
@@ -151,9 +151,11 @@ class ModpackPipeline:
             self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names=", ".join(x["name"] for x in installed)
             rawq=self.llm.text(QUEST_SYSTEM,f"Concept: {concept}\\nMinecraft {mc} {loader}. Installed mods: {names}")
+            self.progress(90,100,"AI response received. Validating quest campaign…")
             campaign=validate_campaign(self.llm.json_from(rawq))
             out=mcdir/"config"/"ftbquests"/"quests"/"chapters"; out.mkdir(parents=True,exist_ok=True)
             for i,ch in enumerate(campaign["chapters"],1):
+                self.progress(90+i*3,100,f"Writing quest chapter {i} of 3…")
                 (out/f"ai_chapter_{i}.snbt").write_text(build_chapter(ch,i),encoding="utf-8")
                 self.log(f"Quest draft written: ai_chapter_{i}.snbt")
             self.log("FTB Quests output is a draft; validate against the installed FTB Quests version in-game.")
