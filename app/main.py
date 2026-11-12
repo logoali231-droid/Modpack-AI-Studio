@@ -54,7 +54,7 @@ QStatusBar { color: #9ca3af; }
 class Worker(QThread):
     log = Signal(str)
     progress = Signal(int, int, str)
-    done = Signal(bool, str)
+    done = Signal(bool, str, object)
 
     def __init__(self, cfg):
         super().__init__()
@@ -62,16 +62,23 @@ class Worker(QThread):
 
     def run(self):
         try:
-            result = ModpackPipeline(self.cfg, self.log.emit, self.progress.emit).run()
+            pipeline = ModpackPipeline(self.cfg, self.log.emit, self.progress.emit)
+            if self.cfg.get("phase") == "choose_version":
+                version, reason = pipeline.prepare_version()
+                self.done.emit(True, f"Minecraft {version} selected. Create a matching Prism instance, then continue.", {
+                    "phase": "version_ready", "version": version, "reason": reason
+                })
+                return
+            result = pipeline.run()
             if isinstance(result, dict):
                 self.done.emit(bool(result.get("success", True)), result.get(
                     "message", "Generation completed. Review the log and manifest."
-                ))
+                ), {"phase": "complete", **result})
             else:
-                self.done.emit(True, "Generation completed. Review the log and manifest.")
+                self.done.emit(True, "Generation completed. Review the log and manifest.", {"phase": "complete"})
         except Exception as exc:
             self.log.emit(f"ERROR · {type(exc).__name__}: {exc}")
-            self.done.emit(False, str(exc))
+            self.done.emit(False, str(exc), {"phase": self.cfg.get("phase", "complete")})
 
 
 class MainWindow(QMainWindow):
@@ -80,6 +87,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Modpack AI Studio")
         self.resize(1080, 850)
         self.elapsed = QElapsedTimer()
+        self.phase = "choose_version"
+        self.selected_version = None
+        self.version_reason = ""
         self.clock = QTimer(self)
         self.clock.setInterval(1000)
         self.clock.timeout.connect(self.update_elapsed)
@@ -143,10 +153,13 @@ class MainWindow(QMainWindow):
         self.loader.addItems(["forge", "fabric", "neoforge", "quilt"])
 
         self.instance = QLineEdit()
-        self.instance.setPlaceholderText("Select your Prism Launcher instance folder")
+        self.instance.setEnabled(False)
+        self.instance.setPlaceholderText("Create the matching Prism instance, then select its folder")
         browse = QPushButton("Browse…")
         browse.setObjectName("secondaryButton")
         browse.clicked.connect(self.browse)
+        self.browse_button = browse
+        browse.setEnabled(False)
         instance_row = QHBoxLayout()
         instance_row.addWidget(self.instance, 1)
         instance_row.addWidget(browse)
@@ -182,7 +195,7 @@ class MainWindow(QMainWindow):
         options_row.addStretch(1)
         create_layout.addLayout(options_row)
 
-        self.runbtn = QPushButton("⚒  Generate modpack")
+        self.runbtn = QPushButton("1. Ask AI to choose Minecraft version")
         self.runbtn.setMinimumHeight(42)
         self.runbtn.clicked.connect(self.start)
         create_layout.addWidget(self.runbtn)
@@ -223,7 +236,9 @@ class MainWindow(QMainWindow):
         self.provider_changed(self.provider.currentText())
         self.auto_version.toggled.connect(self.version.setDisabled)
         self.version.setDisabled(True)
-        self.statusBar().showMessage("Ready · AI version selection is enabled")
+        self.version.setReadOnly(True)
+        self.version.setToolTip("The selected target version will appear here. Create a matching Prism instance before continuing.")
+        self.statusBar().showMessage("Step 1 · Let the AI choose the Minecraft version")
 
     def provider_changed(self, provider):
         local = provider.startswith("Ollama")
@@ -240,6 +255,12 @@ class MainWindow(QMainWindow):
             self.instance.setText(path)
 
     def start(self):
+        if self.phase == "choose_version":
+            self.choose_version()
+        else:
+            self.continue_generation()
+
+    def build_config(self, include_instance=False):
         selected_provider = self.provider.currentText()
         provider = "Ollama" if selected_provider.startswith("Ollama") else selected_provider
         key = self.key.text().strip()
@@ -256,23 +277,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Keyring unavailable", str(exc))
                 return
 
-        instance = Path(self.instance.text()).expanduser()
-        if not instance.is_dir():
-            QMessageBox.warning(self, "Invalid instance", "Choose an existing Prism instance folder.")
-            return
         if not self.prompt.toPlainText().strip():
             QMessageBox.warning(self, "Missing prompt", "Describe the modpack first.")
-            return
-        if not self.auto_version.isChecked() and not self.version.text().strip():
-            QMessageBox.warning(self, "Missing version", "Enter a Minecraft version or enable AI selection.")
-            return
-
-        self.runbtn.setEnabled(False)
-        self.log.clear()
-        self.elapsed.start()
-        self.clock.start()
-        self.elapsed_label.setText("00:00 elapsed")
-        self.on_progress(0, 100, "Starting generation…")
+            return None
 
         cfg = {
             "provider": provider,
@@ -282,16 +289,52 @@ class MainWindow(QMainWindow):
             "version": self.version.text().strip(),
             "auto_version": self.auto_version.isChecked(),
             "loader": self.loader.currentText(),
-            "instance": str(instance),
             "prompt": self.prompt.toPlainText(),
             "quests": self.quests.isChecked(),
             "backup": self.backup.isChecked(),
         }
+        if include_instance:
+            instance = Path(self.instance.text()).expanduser()
+            if not instance.is_dir():
+                QMessageBox.warning(self, "Invalid instance", "Choose an existing Prism instance folder.")
+                return None
+            cfg["instance"] = str(instance)
+        return cfg
+
+    def launch_worker(self, cfg):
+        self.runbtn.setEnabled(False)
+        self.log.clear() if cfg.get("phase") == "choose_version" else None
+        self.elapsed.start()
+        self.clock.start()
+        self.elapsed_label.setText("00:00 elapsed")
+        self.on_progress(0, 100, "Starting…")
         self.worker = Worker(cfg)
         self.worker.log.connect(self.log.append)
         self.worker.progress.connect(self.on_progress)
         self.worker.done.connect(self.finished)
         self.worker.start()
+
+    def choose_version(self):
+        cfg = self.build_config()
+        if cfg is None:
+            return
+        cfg["phase"] = "choose_version"
+        self.launch_worker(cfg)
+
+    def continue_generation(self):
+        if not self.selected_version:
+            QMessageBox.warning(self, "Version not selected", "Ask the AI to choose a version first.")
+            return
+        cfg = self.build_config(include_instance=True)
+        if cfg is None:
+            return
+        cfg["version"] = self.selected_version
+        cfg["auto_version"] = False
+        cfg["version_preselected"] = True
+        cfg["version_reason"] = self.version_reason
+        cfg["version_selection"] = "ai"
+        cfg["phase"] = "generate"
+        self.launch_worker(cfg)
 
     def on_progress(self, value, maximum, message):
         self.stage_label.setText(message)
@@ -308,9 +351,30 @@ class MainWindow(QMainWindow):
         seconds = self.elapsed.elapsed() // 1000
         self.elapsed_label.setText(str(timedelta(seconds=seconds)).split(".")[0] + " elapsed")
 
-    def finished(self, ok, message):
+    def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
+        payload = payload or {}
+        if ok and payload.get("phase") == "version_ready":
+            self.selected_version = payload["version"]
+            self.version_reason = payload.get("reason", "")
+            self.version.setText(self.selected_version)
+            self.instance.setEnabled(True)
+            self.browse_button.setEnabled(True)
+            self.runbtn.setText("2. Continue with this Prism instance")
+            self.phase = "generate"
+            self.on_progress(100, 100, f"Paused. Create a Minecraft {self.selected_version} Prism instance.")
+            self.statusBar().showMessage("Paused · Create the matching Prism instance and select its folder")
+            QMessageBox.information(
+                self, "Version selected",
+                f"The AI selected Minecraft {self.selected_version}.\n\n"
+                f"Reason: {self.version_reason}\n\n"
+                "Now open Prism Launcher, create a new instance with this exact Minecraft version "
+                f"and the {self.loader.currentText()} loader, then return here and select that instance folder. "
+                "The app will wait until you click Continue."
+            )
+            return
+
         if ok:
             partial = "quest generation failed" in message.lower()
             self.on_progress(
