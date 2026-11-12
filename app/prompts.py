@@ -74,11 +74,11 @@ Return ONLY JSON in this exact shape:
 Rules:
 - Exactly 3 chapters, each with 3-6 quests.
 - Make progression coherent and gradual. Early quests must not require late-game materials.
-- Use vanilla Minecraft item IDs unless a supplied installed-mod item ID is explicitly known. Never invent mod item IDs.
+- Use vanilla Minecraft item IDs exclusively. Never invent modded item IDs.
 - Every quest must have 1-4 item tasks. All tasks in a quest are required.
 - Tasks are inventory objectives: the player must obtain the specified item and count in a single stack.
 - Keep counts between 1 and 64. Use realistic counts and useful, balanced item rewards.
-- Rewards must use valid namespaced item IDs. Prefer vanilla rewards unless a supplied installed-mod item ID is explicitly known.
+- Rewards must use vanilla Minecraft item IDs exclusively.
 - Use valid namespaced item IDs and positive integer counts.
 - Give each chapter and quest a concise title and a useful description that explains the goal.
 - Return JSON only, without Markdown or commentary.
