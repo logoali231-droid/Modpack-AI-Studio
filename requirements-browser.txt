@@ -1,0 +1,2 @@
+# Optional browser research support. Install separately from the base app.
+playwright>=1.50
