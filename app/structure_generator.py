@@ -111,6 +111,9 @@ def validate_blueprint(data, extra_materials=None):
     if not isinstance(features, list):
         raise ValueError("features must be an array.")
     features = list(dict.fromkeys(str(v).lower() for v in features if str(v).lower() in allowed_features))
+    # A complete 13x13 dungeon chamber must fit inside the building footprint.
+    if "dungeon" in features:
+        width, depth = max(width, 13), max(depth, 13)
     return {
         "name": str(data.get("name") or "AI Structure")[:64], "structure_type": kind,
         "width": width, "depth": depth, "floors": floors, "roof_style": roof,
