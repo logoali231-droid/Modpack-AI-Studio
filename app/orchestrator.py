@@ -260,9 +260,12 @@ class ModpackPipeline:
 
     def _generate_campaign(self, concept, mc, loader, installed_names):
         """Plan once, then generate and validate one chapter per local-model call."""
+        lessons = load_confirmed_lessons(limit=8)
         plan_input = (
             f"Modpack concept: {concept}\\nMinecraft {mc} {loader}. "
             f"Installed mods: {installed_names}\\n"
+            f"CONFIRMED LESSONS FROM PREVIOUS RUNS (use only when relevant): "
+            f"{json.dumps(lessons, ensure_ascii=False)}\\n"
             "Return a progression outline only. Do not write quests yet."
         )
         plan_raw = self.llm.text(QUEST_PLAN_SYSTEM, plan_input)
@@ -298,26 +301,42 @@ class ModpackPipeline:
                 chapters.append(validated["chapters"][0])
             except (ValueError, TypeError, KeyError, IndexError, AttributeError) as first_error:
                 self.log(f"Chapter {index} invalid: {first_error}. Retrying only this chapter…")
-                repair_input = (
-                    f"CHAPTER: {title}\\nPURPOSE: {description}\\n"
-                    f"VALIDATION ERROR: {first_error}\\nPREVIOUS RESPONSE:\\n{raw}\\n"
-                    "Return one corrected chapter object with exactly 3 quests. "
-                    "Every quest needs a non-empty tasks array with valid minecraft: item IDs. "
-                    "Do not return a campaign wrapper."
-                )
-                repaired = self.llm.text(
-                    QUEST_CHAPTER_SYSTEM + "\\nYou are repairing only this chapter. Follow the schema exactly.",
-                    repair_input
-                )
-                chapter_data = self.llm.json_from(repaired)
-                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapter"), dict):
-                    chapter_data = chapter_data["chapter"]
-                if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapters"), list):
-                    chapter_data = chapter_data["chapters"][0] if chapter_data["chapters"] else {}
-                chapter_data["title"] = title
-                chapter_data["description"] = description
-                validated = validate_campaign({"chapters": [chapter_data]})
-                chapters.append(validated["chapters"][0])
+                previous_response = raw
+                last_error = first_error
+                for attempt in range(1, 3):
+                    repair_input = (
+                        f"CHAPTER: {title}\\nPURPOSE: {description}\\n"
+                        f"VALIDATION ERROR: {last_error}\\nPREVIOUS RESPONSE:\\n{previous_response}\\n"
+                        "Return exactly one JSON object with title, description, and exactly 3 quests. "
+                        "Each quest must have a non-empty tasks array. Each task item must be a vanilla "
+                        "Minecraft item ID beginning minecraft:. Do not return a campaign wrapper."
+                    )
+                    repaired = self.llm.text(
+                        QUEST_CHAPTER_SYSTEM + "\\nRepair only this chapter. Output the required JSON object.",
+                        repair_input
+                    )
+                    previous_response = repaired
+                    try:
+                        chapter_data = self.llm.json_from(repaired)
+                        if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapter"), dict):
+                            chapter_data = chapter_data["chapter"]
+                        if isinstance(chapter_data, dict) and isinstance(chapter_data.get("chapters"), list):
+                            chapter_data = chapter_data["chapters"][0] if chapter_data["chapters"] else {}
+                        if not isinstance(chapter_data, dict):
+                            raise ValueError("The model did not return a chapter JSON object.")
+                        chapter_data["title"] = title
+                        chapter_data["description"] = description
+                        validated = validate_campaign({"chapters": [chapter_data]})
+                        chapters.append(validated["chapters"][0])
+                        self.log(f"Chapter {index} repaired successfully on attempt {attempt}.")
+                        break
+                    except (ValueError, TypeError, KeyError, IndexError, AttributeError) as repair_error:
+                        last_error = repair_error
+                        self.log(f"Chapter {index} repair attempt {attempt} failed: {repair_error}")
+                else:
+                    raise ValueError(
+                        f"Chapter {index} ({title}) failed validation after two repair attempts: {last_error}"
+                    ) from last_error
         return validate_campaign({"campaign_title": campaign_title, "chapters": chapters})
 
     def _write_quest_datapack(self, mc, concept, installed_names, mcdir, world_value=""):
