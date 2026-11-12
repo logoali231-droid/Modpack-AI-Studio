@@ -7,6 +7,7 @@ from pathlib import Path
 from app.llm import LLMClient
 from app.quests import validate_campaign, build_datapack, pack_format_for
 from app.dependency_verifier import verify_mod_directory
+from app.mod_database import ModDatabase
 
 
 def make_campaign(chapter_count):
@@ -61,6 +62,38 @@ class CoreTests(unittest.TestCase):
             "data/modpack_ai/loot_tables/quest_rewards/chapter_1_quest_1.json",
             files
         )
+
+    def test_mod_database_upserts_searches_and_filters(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = ModDatabase(Path(temp) / "mods.sqlite3")
+            database.upsert({
+                "source": "modrinth",
+                "project_id": "abc123",
+                "name": "Example Machines",
+                "summary": "Automation and machines",
+                "description": "Adds a detailed multiblock automation system.",
+                "authors": ["Example Author"],
+                "categories": ["technology"],
+                "game_versions": ["1.16.5", "1.20.1"],
+                "loaders": ["forge"],
+                "downloads": 1200,
+                "website": "https://example.invalid"
+            })
+            database.upsert({
+                "source": "modrinth",
+                "project_id": "abc123",
+                "name": "Example Machines",
+                "summary": "Automation and machines",
+                "game_versions": ["1.16.5", "1.20.1"],
+                "loaders": ["forge"],
+                "downloads": 1300
+            })
+            results = database.search("multiblock", game_version="1.16.5", loader="forge")
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["description"], "Adds a detailed multiblock automation system.")
+            self.assertEqual(results[0]["downloads"], 1300)
+            self.assertEqual(database.stats()["modrinth"]["total"], 1)
+            self.assertEqual(database.search("multiblock", game_version="1.12.2"), [])
 
     def test_pack_format_for_1165(self):
         self.assertEqual(pack_format_for("1.16.5"), 6)
