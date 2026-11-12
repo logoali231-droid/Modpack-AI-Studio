@@ -196,6 +196,20 @@ class MainWindow(QMainWindow):
         grid.addRow("Manual Minecraft version", self.version)
         grid.addRow("Modloader", self.loader)
         grid.addRow("Prism instance", instance_row)
+
+        self.world_path = QLineEdit()
+        self.world_path.setEnabled(False)
+        self.world_path.setPlaceholderText(
+            "Optional: select an existing world folder (the one containing level.dat)"
+        )
+        self.world_browse = QPushButton("Select world…")
+        self.world_browse.setObjectName("secondaryButton")
+        self.world_browse.setEnabled(False)
+        self.world_browse.clicked.connect(self.browse_world)
+        world_row = QHBoxLayout()
+        world_row.addWidget(self.world_path, 1)
+        world_row.addWidget(self.world_browse)
+        grid.addRow("Install quests into world", world_row)
         create_layout.addWidget(config_group)
 
         prompt_group = QGroupBox("Describe your modpack")
@@ -210,7 +224,7 @@ class MainWindow(QMainWindow):
         create_layout.addWidget(prompt_group, 1)
 
         options_row = QHBoxLayout()
-        self.quests = QCheckBox("Generate a three-chapter FTB Quests campaign")
+        self.quests = QCheckBox("Generate a three-chapter custom quest campaign (no quest mod needed)")
         self.quests.setChecked(True)
         self.backup = QCheckBox("Back up existing mods folder")
         self.backup.setChecked(True)
@@ -378,6 +392,17 @@ class MainWindow(QMainWindow):
         if path:
             self.instance.setText(path)
 
+    def browse_world(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Minecraft world folder")
+        if path:
+            if not (Path(path) / "level.dat").is_file():
+                QMessageBox.warning(
+                    self, "Not a Minecraft world",
+                    "Select the world save folder containing level.dat, not the saves folder itself."
+                )
+                return
+            self.world_path.setText(path)
+
     def start(self):
         if self.phase == "choose_version":
             self.choose_version()
@@ -415,6 +440,7 @@ class MainWindow(QMainWindow):
             "loader": self.loader.currentText(),
             "prompt": self.prompt.toPlainText(),
             "quests": self.quests.isChecked(),
+            "world_path": self.world_path.text().strip(),
             "backup": self.backup.isChecked(),
         }
         if include_instance:
@@ -485,6 +511,8 @@ class MainWindow(QMainWindow):
             self.version.setText(self.selected_version)
             self.instance.setEnabled(True)
             self.browse_button.setEnabled(True)
+            self.world_path.setEnabled(True)
+            self.world_browse.setEnabled(True)
             # Freeze the inputs used for version selection so the target cannot drift
             # while the user creates the matching Prism instance.
             for widget in (
@@ -511,7 +539,7 @@ class MainWindow(QMainWindow):
             self.on_progress(
                 100, 100,
                 "Mods installed; quests need attention." if partial
-                else "Finished. Review the installed mods and quest files."
+                else "Finished. Review the installed mods and native quest datapack."
             )
             self.statusBar().showMessage(message)
         else:
