@@ -52,3 +52,9 @@ This remains an early desktop application, not a feature-complete Modbot.gg clon
 
 ## License
 MIT. Minecraft is a trademark of Mojang Studios. Modrinth, CurseForge, Prism Launcher, Ollama, OpenAI, Gemini, and Modbot.gg belong to their respective owners. No affiliation or endorsement is implied.
+
+
+## Error Auto Fix and persistent lessons
+The Error Auto Fix tab sends the selected log to the configured model for diagnosis. It reports evidence, likely causes, safe repair steps, and a code-change suggestion; it does not silently edit the project or delete files. Each diagnosis is stored locally under `~/.local/share/modpack-ai-studio/error_lessons.json`, with a readable companion `error_lessons.md`. New lessons start as unverified. Only lessons explicitly confirmed by the user are reused as context in later modpack planning, quest planning, and error analyses. This is retrieval-based memory, not model-weight training.
+
+If quest generation fails after mods have been installed, use **Retry quest generation only** in the Error Auto Fix tab. It reads the existing Prism manifest and regenerates the datapack without searching for or reinstalling mods.
