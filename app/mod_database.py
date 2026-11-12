@@ -96,7 +96,7 @@ class ModDatabase:
             """, values)
         return project_id
 
-    def search(self, query="", source="all", limit=200):
+    def search(self, query="", source="all", limit=200, game_version="", loader=""):
         terms = [part.strip() for part in str(query).split() if part.strip()]
         where = []
         params = []
@@ -107,6 +107,12 @@ class ModDatabase:
             where.append("(name LIKE ? OR summary LIKE ? OR description LIKE ? OR categories LIKE ?)")
             pattern = f"%{term}%"
             params.extend([pattern] * 4)
+        if game_version:
+            where.append("game_versions LIKE ?")
+            params.append(f"%{game_version}%")
+        if loader:
+            where.append("loaders LIKE ?")
+            params.append(f"%{loader}%")
         sql = "SELECT * FROM mods"
         if where:
             sql += " WHERE " + " AND ".join(where)
