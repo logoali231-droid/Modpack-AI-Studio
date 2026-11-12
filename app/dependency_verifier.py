@@ -252,7 +252,7 @@ def version_satisfies(version, expression):
     if not expression or expression in ("*", "any"):
         return True
     # Maven permits unions such as [1.0,1.5),[2.0,)
-    parts = re.findall(r"[\\[(][^\\]\\)]*[\\])]", expression)
+    parts = re.findall(r"[\[(][^)\]]*[\])]", expression)
     compact = expression.replace(" ", "")
     if parts and "".join(parts) == compact and len(parts) > 1:
         outcomes = [_single_range_matches(version, part) for part in parts]
