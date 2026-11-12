@@ -87,6 +87,11 @@ class StructureGeneratorTests(unittest.TestCase):
         self.assertTrue(all(0 <= x < size[0] and 0 <= y < size[1] and 0 <= z < size[2]
                             for x, y, z in blocks))
 
+    def test_dungeon_expands_small_footprint_to_fit_chamber(self):
+        project = validate_project(self.single(width=9, depth=9, features=["dungeon"]))
+        self.assertEqual(project["width"], 13)
+        self.assertEqual(project["depth"], 13)
+
     def test_dungeon_is_a_real_underground_volume(self):
         plain = validate_project(self.single(features=[]))
         dungeon = validate_project(self.single(features=["dungeon"]))
