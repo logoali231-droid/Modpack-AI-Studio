@@ -427,7 +427,7 @@ def discover_modded_block_palette(mods_directory, limit=3000):
         try:
             with zipfile.ZipFile(jar_path) as archive:
                 for entry in archive.namelist():
-                    match = re.match(r"^assets/([a-z0-9_.-]+)/blockstates/(.+)\\.json$", entry)
+                    match = re.match(r"^assets/([a-z0-9_.-]+)/blockstates/(.+)\.json$", entry)
                     if not match or match.group(1) == "minecraft":
                         continue
                     namespace, block_path = match.groups()
