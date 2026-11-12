@@ -23,14 +23,21 @@ class MainWindow(QMainWindow):
   group=QGroupBox("AI & Minecraft configuration"); grid=QFormLayout(group)
   self.provider=QComboBox(); self.provider.addItems(["Ollama (local, free)","OpenAI","Google Gemini"])
   self.model=QLineEdit("qwen2.5:3b"); self.key=QLineEdit(); self.key.setEchoMode(QLineEdit.Password)
-  self.ollama=QLineEdit("http://localhost:11434"); self.version=QLineEdit("1.20.1")
+  self.ollama=QLineEdit("http://localhost:11434")
+  self.auto_version=QCheckBox("Let AI choose the Minecraft version from my prompt")
+  self.auto_version.setChecked(True)
+  self.version=QLineEdit("1.20.1")
+  self.version.setToolTip("Used only when automatic version selection is disabled.")
   self.loader=QComboBox(); self.loader.addItems(["forge","fabric","neoforge","quilt"])
   self.instance=QLineEdit(); browse=QPushButton("Browse…"); browse.clicked.connect(self.browse)
   row=QHBoxLayout(); row.addWidget(self.instance); row.addWidget(browse)
   grid.addRow("AI provider",self.provider); grid.addRow("Model",self.model); grid.addRow("API key",self.key)
-  grid.addRow("Ollama URL",self.ollama); grid.addRow("Minecraft version",self.version); grid.addRow("Modloader",self.loader); grid.addRow("Prism instance",row)
+  grid.addRow("Ollama URL",self.ollama); grid.addRow(self.auto_version); grid.addRow("Manual Minecraft version",self.version)
+  grid.addRow("Modloader",self.loader); grid.addRow("Prism instance",row)
   form.addWidget(group)
-  self.prompt=QTextEdit(); self.prompt.setPlaceholderText("Describe your modpack: theme, progression, tech, survival, performance limits…")
+  self.auto_version.toggled.connect(self.version.setDisabled)
+  self.version.setDisabled(True)
+  self.prompt=QTextEdit(); self.prompt.setPlaceholderText("Describe your modpack: theme, progression, tech, survival, preferred era or mod requirements…")
   self.prompt.setMinimumHeight(150); form.addWidget(QLabel("Describe the modpack")); form.addWidget(self.prompt)
   self.quests=QCheckBox("Generate a three-chapter FTB Quests campaign"); self.quests.setChecked(True)
   self.backup=QCheckBox("Back up existing mods folder"); self.backup.setChecked(True)
@@ -40,7 +47,7 @@ class MainWindow(QMainWindow):
   self.progress=QProgressBar(); self.progress.setRange(0,0); self.progress.hide(); av.addWidget(self.progress)
   self.log=QTextEdit(); self.log.setReadOnly(True); self.log.setStyleSheet("background:#101820;color:#b8e6c1;font-family:monospace"); av.addWidget(self.log,1)
   self.provider.currentTextChanged.connect(self.provider_changed); self.provider_changed(self.provider.currentText())
-  self.statusBar().showMessage("Ready · Ollama is the no-API-cost option")
+  self.statusBar().showMessage("Ready · AI version selection is enabled by default")
  def provider_changed(self,p):
   local=p.startswith("Ollama"); self.key.setEnabled(not local); self.ollama.setEnabled(local)
   self.model.setText("qwen2.5:3b" if local else ("gpt-4.1-mini" if p=="OpenAI" else "gemini-2.5-flash"))
@@ -58,10 +65,13 @@ class MainWindow(QMainWindow):
   inst=Path(self.instance.text()).expanduser()
   if not inst.is_dir(): QMessageBox.warning(self,"Invalid instance","Choose an existing Prism instance folder."); return
   if not self.prompt.toPlainText().strip(): QMessageBox.warning(self,"Missing prompt","Describe the modpack first."); return
+  if not self.auto_version.isChecked() and not self.version.text().strip():
+   QMessageBox.warning(self,"Missing version","Enter a Minecraft version or enable AI selection."); return
   self.runbtn.setEnabled(False); self.progress.show(); self.log.clear()
   cfg={"provider":provider,"model":self.model.text().strip(),"api_key":key,"ollama_url":self.ollama.text().strip(),
-   "version":self.version.text().strip(),"loader":self.loader.currentText(),"instance":str(inst),
-   "prompt":self.prompt.toPlainText(),"quests":self.quests.isChecked(),"backup":self.backup.isChecked()}
+   "version":self.version.text().strip(),"auto_version":self.auto_version.isChecked(),
+   "loader":self.loader.currentText(),"instance":str(inst),"prompt":self.prompt.toPlainText(),
+   "quests":self.quests.isChecked(),"backup":self.backup.isChecked()}
   self.worker=Worker(cfg); self.worker.log.connect(self.log.append); self.worker.done.connect(self.finished); self.worker.start()
  def finished(self,ok,msg):
   self.runbtn.setEnabled(True); self.progress.hide(); self.statusBar().showMessage(msg)
