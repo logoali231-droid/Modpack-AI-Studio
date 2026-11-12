@@ -263,6 +263,16 @@ class ModpackPipeline:
             )
         self.log(f"Prism instance verified: Minecraft {prism_mc}.")
 
+        # Validate the optional world destination before any mod files are changed.
+        world_value = str(self.c.get("world_path", "")).strip()
+        if self.c.get("quests") and world_value:
+            world_root = Path(world_value).expanduser().resolve()
+            if not world_root.is_dir() or not (world_root / "level.dat").is_file():
+                raise ValueError(
+                    "The selected Minecraft world folder is invalid. Choose the world folder "
+                    "that contains level.dat, or leave the field empty to create a datapack ZIP."
+                )
+
         catalog = self.c.get("catalog", "Modrinth")
         self.progress(10, 100, f"Planning gameplay requirements for Minecraft {mc}…")
         self.log(f"1/4 · Planning gameplay requirements for {catalog} on Minecraft {mc}…")
