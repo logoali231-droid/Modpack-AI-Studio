@@ -4,7 +4,7 @@ import json, shutil, datetime, re
 from .llm import LLMClient
 from .modrinth import Modrinth
 from .curseforge import CurseForge
-from .quests import build_datapack, validate_campaign
+from .quests import build_datapack, pack_format_for, validate_campaign
 from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_SYSTEM
 
 
@@ -265,6 +265,10 @@ class ModpackPipeline:
 
         # Validate the optional world destination before any mod files are changed.
         world_value = str(self.c.get("world_path", "")).strip()
+        if self.c.get("quests"):
+            # Fail before mod discovery/download if this release has no verified
+            # native-advancement datapack schema adapter yet.
+            pack_format_for(mc)
         if self.c.get("quests") and world_value:
             world_root = Path(world_value).expanduser().resolve()
             if not world_root.is_dir() or not (world_root / "level.dat").is_file():
