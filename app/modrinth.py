@@ -91,6 +91,29 @@ class Modrinth:
             })
         return candidates
 
+    def details(self, identifier):
+        """Fetch the full public project description and metadata for the local index."""
+        project = self.get(f"{API}/project/{quote(str(identifier), safe='')}")
+        if not isinstance(project, dict):
+            raise ValueError(f"Unexpected Modrinth project response for {identifier}")
+        return {
+            "source": "modrinth",
+            "project_id": str(project.get("id") or identifier),
+            "slug": project.get("slug", ""),
+            "name": project.get("title") or project.get("slug") or str(identifier),
+            "summary": project.get("description", ""),
+            "description": project.get("body", ""),
+            "authors": [],
+            "categories": project.get("categories", []),
+            "game_versions": project.get("game_versions", []),
+            "loaders": project.get("loaders", []),
+            "downloads": project.get("downloads", 0),
+            "icon_url": project.get("icon_url", ""),
+            "website": project.get("source_url") or project.get("wiki_url") or "",
+            "license": (project.get("license") or {}).get("name", ""),
+            "date_modified": project.get("updated", ""),
+        }
+
     def download(self, mod, dest):
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
