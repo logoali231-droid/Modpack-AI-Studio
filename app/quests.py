@@ -1,16 +1,14 @@
 """Native Minecraft advancement-based quest datapack generator.
 
-This deliberately uses Minecraft's built-in advancements system. It needs no
-FTB Quests, quest library, Forge/Fabric mod, or runtime dependency.
+Campaign size is progression-driven, not fixed to three chapters. Hard safety
+ceilings prevent malformed local-model output from exhausting memory.
 """
 import json
 import re
 
 ITEM_RE = re.compile(r"^[a-z0-9_.-]+:[a-z0-9_./-]+$")
-
-
-def _item(value, fallback="minecraft:book"):
-    return value if isinstance(value, str) and ITEM_RE.fullmatch(value) else fallback
+MAX_CHAPTERS = 100
+MAX_QUESTS_PER_CHAPTER = 20
 
 
 def _count(value):
@@ -21,43 +19,42 @@ def _count(value):
 
 
 def validate_campaign(data):
-    if not isinstance(data, dict) or not isinstance(data.get("chapters"), list) or len(data["chapters"]) != 3:
-        raise ValueError("Quest plan must contain exactly three chapters.")
-    for ci, chapter in enumerate(data["chapters"], 1):
-        if not isinstance(chapter, dict) or not isinstance(chapter.get("quests"), list) or not chapter["quests"]:
-            raise ValueError(f"Chapter {ci} needs quests.")
-        chapter["quests"] = chapter["quests"][:6]
-        if len(chapter["quests"]) < 3:
-            raise ValueError(f"Chapter {ci} needs at least three quests.")
-        for qi, quest in enumerate(chapter["quests"], 1):
-            if not isinstance(quest, dict) or not isinstance(quest.get("tasks"), list) or not quest["tasks"]:
-                raise ValueError(f"Chapter {ci}, quest {qi} needs at least one item task.")
+    chapters = data.get("chapters") if isinstance(data, dict) else None
+    if not isinstance(chapters, list) or not 1 <= len(chapters) <= MAX_CHAPTERS:
+        raise ValueError(f"Quest campaign must contain 1-{MAX_CHAPTERS} chapters.")
+    for ci, chapter in enumerate(chapters, 1):
+        quests = chapter.get("quests") if isinstance(chapter, dict) else None
+        if not isinstance(quests, list) or not 1 <= len(quests) <= MAX_QUESTS_PER_CHAPTER:
+            raise ValueError(f"Chapter {ci} must contain 1-{MAX_QUESTS_PER_CHAPTER} quests.")
+        for qi, quest in enumerate(quests, 1):
+            if not isinstance(quest, dict) or not isinstance(quest.get("tasks"), list):
+                raise ValueError(f"Chapter {ci}, quest {qi} needs item tasks.")
             tasks = []
             for task in quest["tasks"][:4]:
                 if not isinstance(task, dict):
                     continue
                 item = task.get("item")
-                # The first release deliberately sticks to vanilla registry IDs.
-                # This avoids generating datapacks that fail to load because an AI
-                # guessed a modded item ID that does not exist in the installed JAR.
-                if not isinstance(item, str) or not ITEM_RE.fullmatch(item) or not item.startswith("minecraft:"):
-                    continue
-                tasks.append({"item": item, "count": _count(task.get("count"))})
+                if isinstance(item, str) and ITEM_RE.fullmatch(item) and item.startswith("minecraft:"):
+                    tasks.append({"item": item, "count": _count(task.get("count"))})
             if not tasks:
-                raise ValueError(f"Chapter {ci}, quest {qi} has no valid namespaced item IDs.")
+                raise ValueError(f"Chapter {ci}, quest {qi} has no valid vanilla item task.")
             quest["tasks"] = tasks
-            reward = quest.get("reward")
-            if not isinstance(reward, dict):
-                reward = {}
+            reward = quest.get("reward") if isinstance(quest.get("reward"), dict) else {}
+            reward_item = reward.get("item")
             quest["reward"] = {
-                "item": _item(reward.get("item"), "minecraft:bread") if str(reward.get("item", "")).startswith("minecraft:") else "minecraft:bread",
+                "item": reward_item if isinstance(reward_item, str)
+                and ITEM_RE.fullmatch(reward_item) and reward_item.startswith("minecraft:")
+                else "minecraft:bread",
                 "count": _count(reward.get("count", 1)),
             }
+            quest["title"] = str(quest.get("title") or f"Quest {qi}")[:80]
+            quest["description"] = str(quest.get("description") or "")[:200]
+        chapter["title"] = str(chapter.get("title") or f"Chapter {ci}")[:80]
+        chapter["description"] = str(chapter.get("description") or "")[:200]
     return data
 
 
 def pack_format_for(version):
-    """Return the data-pack format for supported Minecraft Java releases."""
     version = str(version).strip()
     exact = {
         "1.13": 4, "1.13.1": 4, "1.13.2": 4,
@@ -82,90 +79,58 @@ def _write_json(files, path, data):
 
 
 def build_datapack(campaign, minecraft_version):
-    """Build a self-contained vanilla advancement campaign as datapack files."""
     pack_format = pack_format_for(minecraft_version)
-    files = {
-        "pack.mcmeta": json.dumps({
-            "pack": {
-                "pack_format": pack_format,
-                "description": "Modpack AI Studio · Custom Quest Campaign"
-            }
-        }, ensure_ascii=False, indent=2) + "\n"
-    }
-
+    files = {"pack.mcmeta": json.dumps({
+        "pack": {"pack_format": pack_format,
+                 "description": "Modpack AI Studio · Custom Quest Campaign"}
+    }, ensure_ascii=False, indent=2) + "\n"}
     for chapter_index, chapter in enumerate(campaign["chapters"], 1):
         chapter_id = f"modpack_ai:quests/chapter_{chapter_index}"
         root_path = f"data/modpack_ai/advancements/quests/chapter_{chapter_index}.json"
-        root = {
+        _write_json(files, root_path, {
             "display": {
                 "icon": {"item": "minecraft:book"},
-                "title": {"text": str(chapter.get("title", f"Chapter {chapter_index}"))[:80]},
-                "description": {"text": str(chapter.get("description", ""))[:200]},
+                "title": {"text": chapter["title"]},
+                "description": {"text": chapter["description"]},
                 "background": "minecraft:textures/gui/advancements/backgrounds/stone.png",
-                "show_toast": False,
-                "announce_to_chat": False
+                "show_toast": False, "announce_to_chat": False
             },
             "criteria": {"chapter_root": {"trigger": "minecraft:impossible"}}
-        }
-        _write_json(files, root_path, root)
-
+        })
         for quest_index, quest in enumerate(chapter["quests"], 1):
             quest_id = f"chapter_{chapter_index}_quest_{quest_index}"
-            advancement_path = (
-                f"data/modpack_ai/advancements/quests/chapter_{chapter_index}/{quest_id}.json"
-            )
-            criteria = {}
-            requirements = []
+            criteria, requirements = {}, []
             for task_index, task in enumerate(quest["tasks"], 1):
                 criterion = f"task_{task_index}"
                 criteria[criterion] = {
                     "trigger": "minecraft:inventory_changed",
-                    "conditions": {
-                        "items": [{
-                            "items": [task["item"]],
-                            "count": {"min": task["count"]}
-                        }]
-                    }
+                    "conditions": {"items": [{
+                        "items": [task["item"]], "count": {"min": task["count"]}
+                    }]}
                 }
                 requirements.append([criterion])
-
-            first_item = quest["tasks"][0]["item"]
+            loot_id = f"modpack_ai:quest_rewards/{quest_id}"
+            _write_json(files,
+                f"data/modpack_ai/advancements/quests/chapter_{chapter_index}/{quest_id}.json", {
+                    "parent": chapter_id,
+                    "display": {
+                        "icon": {"item": quest["tasks"][0]["item"]},
+                        "title": {"text": quest["title"]},
+                        "description": {"text": quest["description"]},
+                        "frame": "task", "show_toast": True,
+                        "announce_to_chat": False, "hidden": False
+                    },
+                    "criteria": criteria, "requirements": requirements,
+                    "rewards": {"loot": [loot_id]}
+                })
             reward = quest["reward"]
-            loot_id = f"modpack_ai:quest_rewards/chapter_{chapter_index}_quest_{quest_index}"
-            advancement = {
-                "parent": chapter_id,
-                "display": {
-                    "icon": {"item": first_item},
-                    "title": {"text": str(quest.get("title", f"Quest {quest_index}"))[:80]},
-                    "description": {"text": str(quest.get("description", ""))[:200]},
-                    "frame": "task",
-                    "show_toast": True,
-                    "announce_to_chat": False,
-                    "hidden": False
-                },
-                "criteria": criteria,
-                "requirements": requirements,
-                "rewards": {"loot": [loot_id]}
-            }
-            _write_json(files, advancement_path, advancement)
-
-            loot_table = {
-                "type": "minecraft:generic",
-                "pools": [{
-                    "rolls": 1,
-                    "entries": [{
-                        "type": "minecraft:item",
-                        "name": reward["item"],
-                        "functions": [{
-                            "function": "minecraft:set_count",
-                            "count": reward["count"]
-                        }]
-                    }]
-                }]
-            }
-            loot_path = (
-                f"data/modpack_ai/loot_tables/quest_rewards/chapter_{chapter_index}_quest_{quest_index}.json"
-            )
-            _write_json(files, loot_path, loot_table)
-
+            _write_json(files,
+                f"data/modpack_ai/loot_tables/quest_rewards/{quest_id}.json", {
+                    "type": "minecraft:generic",
+                    "pools": [{"rolls": 1, "entries": [{
+                        "type": "minecraft:item", "name": reward["item"],
+                        "functions": [{"function": "minecraft:set_count",
+                                       "count": reward["count"]}]
+                    }]}]
+                })
     return files
