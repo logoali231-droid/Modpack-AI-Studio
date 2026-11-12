@@ -232,11 +232,12 @@ def _inspect_archive_bytes(raw, label, depth=0):
             total = sum(info.file_size for info in infos if not info.is_dir())
             if total > MAX_TOTAL_METADATA * 8:
                 result["warnings"].append("Archive has an unusually large uncompressed size.")
-            ids, versions, deps = _forge_metadata(archive)
-            if ids or deps:
+            ids, versions, forge_deps = _forge_metadata(archive)
+            if ids or forge_deps:
                 result["metadata"].append("META-INF/mods.toml")
             result["mod_ids"].extend(ids)
             result["mod_versions"].update(versions)
+            result["dependencies"].extend(forge_deps)
 
             names = set(archive.namelist())
             for metadata_name in ("fabric.mod.json", "quilt.mod.json"):
@@ -252,8 +253,6 @@ def _inspect_archive_bytes(raw, label, depth=0):
                 result["metadata"].append("mcmod.info")
                 result["mod_ids"].extend(ids)
                 result["mod_versions"].update(versions)
-
-            result["dependencies"].extend(deps if "META-INF/mods.toml" in result["metadata"] else [])
 
             if depth < MAX_JARJAR_DEPTH:
                 metadata = _read_json(archive, "META-INF/jarjar/metadata.json")
@@ -379,6 +378,12 @@ def verify_mod_directory(paths, log=lambda message: None, strict=True):
     if conflicts:
         failures.append("declared mod conflicts: " + ", ".join(
             f"{e['file']} conflicts with {e['dependency']}" for e in conflicts))
+    if duplicates:
+        failures.append("duplicate internal mod IDs: " + ", ".join(
+            f"{mod_id} in {', '.join(files)}" for mod_id, files in duplicates.items()))
+    if unreadable:
+        failures.append("unreadable JAR archives: " + ", ".join(
+            f"{entry['file']} ({entry['error']})" for entry in unreadable))
     if strict and failures:
         raise RuntimeError("Dependency verification failed: " + "; ".join(failures))
     if duplicates:
