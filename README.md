@@ -54,7 +54,7 @@ The **Structure Designer** tab supports single buildings and multi-building sett
 ### Current capabilities
 - Single buildings: houses, keeps, towers, outposts and ruins, with multiple floors, rooms, roofs, balconies, windows and decoration.
 - Settlements: 2–10 buildings in one combined structure, with optional roads, central well/plaza and palisade. Overlapping AI placements are automatically moved to the nearest available grid position when space permits.
-- Underground dungeons: a real multi-room underground chamber with walls, corridors, barred cells, a ladder shaft, chest and spawner. This is geometry and vanilla block placement, not a custom loot table or configured mob-spawner payload.
+- Underground dungeons: a real multi-room underground chamber with walls, corridors, barred cells, a ladder shaft, chest and spawner. The result reports the Structure Block Y offset (-7) needed to align the building's ground level with the placement point. This is geometry and vanilla block placement, not a custom loot table or configured mob-spawner payload.
 - Modded block palette: scan a local Prism `minecraft/mods` folder for blockstate assets inside JARs, then use the suggested namespace:block IDs as material keys. Manual JSON palettes are also supported, e.g. `{"create_casing":"create:andesite_casing"}`. Discovery is based on JAR assets, not proof of runtime registration in the selected loader/version.
 - Interactive isometric 3D preview: drag to rotate and use the mouse wheel to zoom. The preview samples up to 5,000 blocks for responsiveness; the exported NBT contains the complete structure.
 - One constrained repair attempt when Qwen returns invalid JSON or a blueprint outside the safety rules.
