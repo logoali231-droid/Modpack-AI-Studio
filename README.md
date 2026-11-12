@@ -47,13 +47,32 @@ Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let t
 ## Quest system scope
 The model chooses the number of chapters based on the requested progression. The validator accepts 1-100 chapters and 1-20 quests per chapter as safety limits, not design targets. Quest objectives and rewards currently use vanilla item IDs only. Datapacks support the verified legacy advancement/item schema for Minecraft 1.13 through 1.20.4; unsupported newer schemas are rejected before mod installation. If no world is selected, the app creates `Modpack_AI_Quests.zip` in the Prism Minecraft directory; copy it into the target world's `datapacks` folder. Enter the world or run `/reload`, then press `L`. This uses Minecraft's native Advancements UI, not a separate custom quest-book screen.
 
-## AI Structure Designer (first version)
+## AI Structure Designer
 
-The **Structure Designer** tab turns a natural-language building request into a compact AI blueprint, then uses a deterministic procedural builder to create the actual block layout. The model does not emit thousands of block coordinates. It chooses bounded dimensions, building type, floors, roof style, room types, features, and materials from a strict whitelist; Python validates the blueprint and constructs the geometry.
+The **Structure Designer** tab supports single buildings and multi-building settlements. Qwen creates a compact architectural plan; Python validates it, builds the block geometry, and exports one vanilla structure NBT file for **Minecraft Java 1.16.5** (DataVersion 2586). The model does not emit individual block coordinates.
 
-The first exporter writes a gzip-compressed vanilla Minecraft structure NBT file for **Minecraft Java 1.16.5 only** (DataVersion 2586). Current limits are 9–25 blocks wide/deep, 1–4 floors, up to 60,000 blocks, and a verified vanilla material palette. The generated file can be imported with a compatible structure tool or placed using Minecraft's Structure Block. The app does not yet place structures automatically or inject them into natural chunk generation. It also does not yet add modded blocks, loot-table contents, entities, or custom structure-generation rules. The optional cellar feature currently represents a cellar access detail, not a fully excavated underground dungeon.
+### Current capabilities
+- Single buildings: houses, keeps, towers, outposts and ruins, with multiple floors, rooms, roofs, balconies, windows and decoration.
+- Settlements: 2–10 buildings in one combined structure, with optional roads, central well/plaza and palisade. Overlapping AI placements are automatically moved to the nearest available grid position when space permits.
+- Underground dungeons: a real multi-room underground chamber with walls, corridors, barred cells, a ladder shaft, chest and spawner. This is geometry and vanilla block placement, not a custom loot table or configured mob-spawner payload.
+- Modded block palette: optional JSON mapping short keys to resource IDs, e.g. `{"create_casing":"create:andesite_casing"}`. Use these keys in the AI-selected material roles. IDs are syntax-checked but cannot be proven to exist in the installed mod registry without loading Minecraft.
+- Interactive isometric 3D preview: drag to rotate and use the mouse wheel to zoom. The preview samples up to 5,000 blocks for responsiveness; the exported NBT contains the complete structure.
+- One constrained repair attempt when Qwen returns invalid JSON or a blueprint outside the safety rules.
 
-To use it, open **Structure Designer**, describe a building, keep the target at Minecraft 1.16.5, choose an output .nbt path, and click **Generate custom structure with AI**. It uses the same configured AI provider/model as the rest of the app. With Ollama, no cloud API is required.
+### How to use
+1. Open **Structure Designer** and describe a building or settlement. Example: "A small abandoned frontier village with a central keep, smithy, watchtower, 5 cottages, a palisade, roads and an underground prison beneath the keep."
+2. Optionally provide a custom mod block palette as JSON. Vanilla materials are available without this.
+3. Choose an output `.nbt` path and generate.
+4. Inspect the 3D preview. Drag to rotate; scroll to zoom.
+5. Copy the NBT file into the target world's `generated/minecraft/structures/` folder and load it with a Minecraft Structure Block, or use a compatible structure editor.
+
+### Scope and safety
+- The NBT exporter currently targets Minecraft Java 1.16.5 only. Other versions need their own DataVersion-aware export/compatibility work.
+- Structure export is not natural chunk generation and does not install or build a Forge mod.
+- Modded resource IDs are not verified against runtime registries. If a block is missing or its blockstate properties differ, Minecraft may substitute, reject or warn about it.
+- The preview is an isometric voxel viewport, not a full Minecraft renderer. It does not simulate lighting, block models, fluids, redstone or collision.
+- Dungeon chest/spawner blocks are placed, but no loot table or mob-spawner entity configuration is embedded.
+- Maximum project size is 120,000 blocks; settlement footprint is limited to 96×96; a settlement may contain 2–10 buildings.
 
 ## Current scope and caveats
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research do not guarantee conflict-free gameplay. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
