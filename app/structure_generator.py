@@ -1,279 +1,335 @@
-"""AI-assisted procedural Minecraft structure generation.
-
-The model designs a bounded blueprint. Deterministic code builds the blocks and
-writes a gzip-compressed vanilla structure NBT file. Initial exporter target:
-Minecraft Java 1.16.5 (DataVersion 2586).
-"""
+"""AI structure planner, procedural settlement/dungeon builder and 1.16.5 NBT exporter."""
 import gzip
 import json
+import re
 import struct
 from pathlib import Path
 
-from .llm import LLMClient
-
 TARGET_VERSION = "1.16.5"
 DATA_VERSION = 2586
-MAX_BLOCKS = 60000
+MAX_BLOCKS = 120000
+MAX_SETTLEMENT_SPAN = 96
 
 MATERIALS = {
-    "stone_bricks": "minecraft:stone_bricks",
-    "mossy_stone_bricks": "minecraft:mossy_stone_bricks",
-    "cracked_stone_bricks": "minecraft:cracked_stone_bricks",
-    "cobblestone": "minecraft:cobblestone",
-    "andesite": "minecraft:andesite",
-    "spruce_planks": "minecraft:spruce_planks",
-    "dark_oak_planks": "minecraft:dark_oak_planks",
-    "oak_planks": "minecraft:oak_planks",
-    "spruce_log": "minecraft:spruce_log",
-    "dark_oak_log": "minecraft:dark_oak_log",
-    "bricks": "minecraft:bricks",
-    "sandstone": "minecraft:sandstone",
-    "nether_bricks": "minecraft:nether_bricks",
-    "glass": "minecraft:glass",
-    "bookshelf": "minecraft:bookshelf",
-    "lantern": "minecraft:lantern",
-    "iron_bars": "minecraft:iron_bars",
+    "stone_bricks": "minecraft:stone_bricks", "mossy_stone_bricks": "minecraft:mossy_stone_bricks",
+    "cracked_stone_bricks": "minecraft:cracked_stone_bricks", "cobblestone": "minecraft:cobblestone",
+    "andesite": "minecraft:andesite", "spruce_planks": "minecraft:spruce_planks",
+    "dark_oak_planks": "minecraft:dark_oak_planks", "oak_planks": "minecraft:oak_planks",
+    "spruce_log": "minecraft:spruce_log", "dark_oak_log": "minecraft:dark_oak_log",
+    "bricks": "minecraft:bricks", "sandstone": "minecraft:sandstone",
+    "nether_bricks": "minecraft:nether_bricks", "glass": "minecraft:glass",
+    "bookshelf": "minecraft:bookshelf", "lantern": "minecraft:lantern",
+    "iron_bars": "minecraft:iron_bars", "oak_stairs": "minecraft:oak_stairs",
+    "oak_slab": "minecraft:oak_slab", "oak_fence": "minecraft:oak_fence",
 }
-
 DEFAULT_MATERIALS = {
-    "wall": "stone_bricks",
-    "accent": "mossy_stone_bricks",
-    "floor": "spruce_planks",
-    "roof": "dark_oak_planks",
-    "trim": "spruce_log",
-    "glass": "glass",
+    "wall": "stone_bricks", "accent": "mossy_stone_bricks", "floor": "spruce_planks",
+    "roof": "dark_oak_planks", "trim": "spruce_log", "glass": "glass",
 }
+RESOURCE_ID = re.compile(r"^[a-z0-9_.-]+:[a-z0-9_./-]+$")
 
-SYSTEM_PROMPT = """You are an architectural planner for a Minecraft structure generator.
-Return ONLY one JSON object with this schema:
-{
-  "name":"short structure name",
-  "structure_type":"tower|keep|outpost|house|ruin",
-  "width":15,
-  "depth":15,
-  "floors":3,
-  "roof_style":"flat|stepped|pointed",
-  "style":"short visual style",
-  "materials":{"wall":"stone_bricks","accent":"mossy_stone_bricks","floor":"spruce_planks","roof":"dark_oak_planks","trim":"spruce_log","glass":"glass"},
-  "room_types":["entrance","library","treasure","workshop"],
-  "features":["balcony","watchtower","broken_roof","cellar","garden"]
-}
+SYSTEM_PROMPT = """You are a practical Minecraft Java 1.16.5 world architect.
+Return ONLY valid JSON. The request may ask for one building or a settlement.
+For one building use:
+{"mode":"single","name":"...","structure_type":"tower|keep|outpost|house|ruin",
+"width":15,"depth":15,"floors":2,"roof_style":"flat|stepped|pointed",
+"style":"...","materials":{"wall":"stone_bricks","accent":"mossy_stone_bricks",
+"floor":"spruce_planks","roof":"dark_oak_planks","trim":"spruce_log","glass":"glass"},
+"room_types":["entrance","library","treasure"],"features":["balcony","dungeon"]}
+For a settlement use:
+{"mode":"settlement","name":"...","width":55,"depth":55,
+"style":"...","materials":{...},"features":["central_well","main_road","palisade"],
+"buildings":[
+{"name":"Hall","structure_type":"keep","x":20,"z":20,"width":19,"depth":17,"floors":2,
+"roof_style":"stepped","room_types":["entrance","dining","storage"],"features":[]},
+{"name":"Smithy","structure_type":"house","x":7,"z":20,"width":13,"depth":11,"floors":1,
+"roof_style":"pointed","room_types":["entrance","workshop"],"features":[]}
+]}
 Rules:
-- The target is Minecraft Java 1.16.5. Use only the supplied material keys and enums.
-- width and depth must be odd integers from 9 through 25. floors must be 1 through 4.
-- material values must be keys from this whitelist: stone_bricks, mossy_stone_bricks,
-  cracked_stone_bricks, cobblestone, andesite, spruce_planks, dark_oak_planks,
-  oak_planks, spruce_log, dark_oak_log, bricks, sandstone, nether_bricks,
-  glass, bookshelf, lantern, iron_bars.
-- room_types may contain: entrance, library, treasure, workshop, barracks, dining,
-  storage, altar, prison, garden. Return 2-6 entries.
-- features may contain: balcony, watchtower, broken_roof, cellar, garden. Return 0-4 entries.
-- Be coherent and imaginative, but do not return block coordinates or individual blocks.
-- Return valid JSON only. No markdown or explanation."""
+- dimensions for buildings are odd integers 9..25, floors 1..4.
+- settlement width/depth 35..96; provide 2..10 buildings, each x/z is its bottom-left coordinate and buildings must fit inside the settlement.
+- Allowed structure_type: tower, keep, outpost, house, ruin.
+- roof_style: flat, stepped, pointed.
+- room_types: entrance, library, treasure, workshop, barracks, dining, storage, altar, prison, garden.
+- features for buildings: balcony, watchtower, broken_roof, dungeon, garden.
+- settlement features: central_well, main_road, palisade.
+- Choose materials only from the supplied palette keys.
+- Never return individual block coordinates. Return a compact design, not block-by-block data.
+- Be creative but practical, and output JSON only."""
 
-def validate_blueprint(data):
+def _bounded_int(data, key, low, high, default=None):
+    value = data.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{key} must be an integer from {low} to {high}.")
+    return value
+
+def _validate_materials(raw, extra_materials=None):
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("materials must be an object.")
+    palette = dict(MATERIALS)
+    for key, value in (extra_materials or {}).items():
+        if not re.fullmatch(r"[a-z0-9_]{1,32}", str(key)):
+            raise ValueError(f"Invalid custom palette key: {key}")
+        if not RESOURCE_ID.fullmatch(str(value)):
+            raise ValueError(f"Invalid resource location for custom material {key}: {value}")
+        palette[str(key)] = str(value)
+    result = dict(DEFAULT_MATERIALS)
+    for role in result:
+        value = str(raw.get(role, result[role])).lower()
+        if value not in palette:
+            raise ValueError(f"Unknown material '{value}' for '{role}'. Add it to the custom palette first.")
+        result[role] = palette[value]
+    return result
+
+def validate_blueprint(data, extra_materials=None):
     if not isinstance(data, dict):
         raise ValueError("The AI blueprint must be a JSON object.")
-    allowed_types = {"tower", "keep", "outpost", "house", "ruin"}
     kind = str(data.get("structure_type", "house")).lower()
-    if kind not in allowed_types:
+    if kind not in {"tower", "keep", "outpost", "house", "ruin"}:
         raise ValueError(f"Unsupported structure_type: {kind}")
-    def bounded_int(key, low, high, default):
-        value = data.get(key, default)
-        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-            raise ValueError(f"{key} must be an integer from {low} to {high}.")
-        return value
-    width = bounded_int("width", 9, 25, 15)
-    depth = bounded_int("depth", 9, 25, 15)
-    floors = bounded_int("floors", 1, 4, 2)
+    width = _bounded_int(data, "width", 9, 25, 15)
+    depth = _bounded_int(data, "depth", 9, 25, 15)
+    floors = _bounded_int(data, "floors", 1, 4, 2)
     if width % 2 == 0 or depth % 2 == 0:
-        raise ValueError("Structure width and depth must be odd numbers.")
+        raise ValueError("Building width and depth must be odd numbers.")
     roof = str(data.get("roof_style", "stepped")).lower()
     if roof not in {"flat", "stepped", "pointed"}:
         raise ValueError("roof_style must be flat, stepped, or pointed.")
-    raw_materials = data.get("materials", {})
-    if not isinstance(raw_materials, dict):
-        raise ValueError("materials must be an object.")
-    materials = dict(DEFAULT_MATERIALS)
-    for key in materials:
-        candidate = str(raw_materials.get(key, materials[key])).lower()
-        if candidate not in MATERIALS:
-            raise ValueError(f"Unknown material '{candidate}' for '{key}'.")
-        materials[key] = candidate
-    allowed_rooms = {"entrance", "library", "treasure", "workshop", "barracks",
+    rooms_allowed = {"entrance", "library", "treasure", "workshop", "barracks",
                      "dining", "storage", "altar", "prison", "garden"}
-    rooms = data.get("room_types", ["entrance", "storage", "workshop"])
+    rooms = data.get("room_types", ["entrance", "storage"])
     if not isinstance(rooms, list):
         raise ValueError("room_types must be an array.")
-    rooms = [str(item).lower() for item in rooms if str(item).lower() in allowed_rooms][:6]
-    if len(rooms) < 2:
+    rooms = [str(v).lower() for v in rooms if str(v).lower() in rooms_allowed][:8]
+    if not rooms:
         rooms = ["entrance", "storage"]
-    allowed_features = {"balcony", "watchtower", "broken_roof", "cellar", "garden"}
+    allowed_features = {"balcony", "watchtower", "broken_roof", "dungeon", "garden"}
     features = data.get("features", [])
     if not isinstance(features, list):
         raise ValueError("features must be an array.")
-    features = list(dict.fromkeys(str(item).lower() for item in features
-                                  if str(item).lower() in allowed_features))[:4]
+    features = list(dict.fromkeys(str(v).lower() for v in features if str(v).lower() in allowed_features))
     return {
-        "name": str(data.get("name") or "AI Structure")[:64],
-        "structure_type": kind, "width": width, "depth": depth, "floors": floors,
-        "roof_style": roof, "style": str(data.get("style") or "fantasy")[:120],
-        "materials": materials, "room_types": rooms, "features": features,
+        "name": str(data.get("name") or "AI Structure")[:64], "structure_type": kind,
+        "width": width, "depth": depth, "floors": floors, "roof_style": roof,
+        "style": str(data.get("style") or "fantasy")[:120],
+        "materials": _validate_materials(data.get("materials"), extra_materials),
+        "room_types": rooms, "features": features,
     }
 
-def _block_state(name, properties=None):
-    return (name, tuple(sorted((properties or {}).items())))
+def validate_project(data, extra_materials=None):
+    if not isinstance(data, dict):
+        raise ValueError("AI design must be a JSON object.")
+    mode = str(data.get("mode", "single")).lower()
+    if mode != "settlement":
+        result = validate_blueprint(data, extra_materials)
+        result["mode"] = "single"
+        return result
+    width = _bounded_int(data, "width", 35, MAX_SETTLEMENT_SPAN, 55)
+    depth = _bounded_int(data, "depth", 35, MAX_SETTLEMENT_SPAN, 55)
+    raw_buildings = data.get("buildings")
+    if not isinstance(raw_buildings, list) or not 2 <= len(raw_buildings) <= 10:
+        raise ValueError("A settlement must contain 2 to 10 buildings.")
+    buildings = []
+    for raw in raw_buildings:
+        building = validate_blueprint(raw, extra_materials)
+        building["x"] = _bounded_int(raw, "x", 0, width - 1)
+        building["z"] = _bounded_int(raw, "z", 0, depth - 1)
+        if building["x"] + building["width"] > width or building["z"] + building["depth"] > depth:
+            raise ValueError(f"Building '{building['name']}' extends beyond settlement bounds.")
+        buildings.append(building)
+    features = data.get("features", [])
+    if not isinstance(features, list):
+        raise ValueError("Settlement features must be an array.")
+    allowed = {"central_well", "main_road", "palisade"}
+    features = list(dict.fromkeys(str(v).lower() for v in features if str(v).lower() in allowed))
+    return {"mode": "settlement", "name": str(data.get("name") or "AI Settlement")[:64],
+            "width": width, "depth": depth, "style": str(data.get("style") or "fantasy")[:120],
+            "materials": _validate_materials(data.get("materials"), extra_materials),
+            "features": features, "buildings": buildings}
 
-def build_blocks(blueprint):
-    """Build a bounded, deterministic structure from a validated blueprint."""
-    w, d, floors = blueprint["width"], blueprint["depth"], blueprint["floors"]
-    mats = {key: MATERIALS[value] for key, value in blueprint["materials"].items()}
+def _state(name, props=None):
+    return (name, tuple(sorted((props or {}).items())))
+
+def _make_building(bp):
+    w, d, floors = bp["width"], bp["depth"], bp["floors"]
+    mats = bp["materials"]
     blocks = {}
     def put(x, y, z, state):
-        if 0 <= x < w and 0 <= z < d and 0 <= y < 48:
+        if -24 <= y <= 64 and 0 <= x < w and 0 <= z < d:
             blocks[(x, y, z)] = state
-    air = _block_state("minecraft:air")
-    wall = _block_state(mats["wall"])
-    accent = _block_state(mats["accent"])
-    floor = _block_state(mats["floor"])
-    roof = _block_state(mats["roof"])
-    trim = _block_state(mats["trim"])
-    glass = _block_state(mats["glass"])
-    center_x, center_z = w // 2, d // 2
-    floor_height = 4
-    total_height = floors * floor_height + 2
-
-    # Foundation and a raised, solid floor for each storey.
-    for y in range(0, floors * floor_height + 1, floor_height):
+    wall, accent = _state(mats["wall"]), _state(mats["accent"])
+    floor, roof, trim = _state(mats["floor"]), _state(mats["roof"]), _state(mats["trim"])
+    glass = _state(mats["glass"])
+    cx, cz, fh = w // 2, d // 2, 4
+    for y in range(0, floors * fh + 1, fh):
         for x in range(w):
             for z in range(d):
                 if y == 0 or 1 <= x < w - 1 and 1 <= z < d - 1:
                     put(x, y, z, accent if y == 0 else floor)
-
-    # Perimeter walls, corner supports, doors, and windows.
     for level in range(floors):
-        base = level * floor_height + 1
+        base = level * fh + 1
         for y in range(base, base + 3):
             for x in range(w):
                 for z in range(d):
-                    if x not in (0, w - 1) and z not in (0, d - 1):
-                        continue
-                    is_corner = x in (0, w - 1) and z in (0, d - 1)
-                    state = trim if is_corner and y == base else wall
-                    put(x, y, z, state)
-        # Front entrance on the ground floor.
+                    if x in (0, w - 1) or z in (0, d - 1):
+                        put(x, y, z, trim if x in (0, w - 1) and z in (0, d - 1) and y == base else wall)
         if level == 0:
-            put(center_x, base, 0, air)
-            put(center_x, base + 1, 0, air)
-        # Symmetrical windows on all four sides.
+            put(cx, base, 0, _state("minecraft:air"))
+            put(cx, base + 1, 0, _state("minecraft:air"))
         for offset in (-2, 2):
-            wx = center_x + offset
-            wz = center_z + offset
-            for y in (base + 1,):
-                if level > 0 or wx != center_x:
-                    put(wx, y, 0, glass)
-                    put(wx, y, d - 1, glass)
-                    put(0, y, wz, glass)
-                    put(w - 1, y, wz, glass)
-        # Interior room divider, offset per level to avoid identical floors.
-        divider_x = center_x + (1 if level % 2 == 0 else -1)
+            put(cx + offset, base + 1, 0, glass)
+            put(cx + offset, base + 1, d - 1, glass)
+            put(0, base + 1, cz + offset, glass)
+            put(w - 1, base + 1, cz + offset, glass)
+        divider = cx + (1 if level % 2 == 0 else -1)
         for z in range(2, d - 2):
-            if z not in (center_z - 1, center_z, center_z + 1):
-                put(divider_x, base + 1, z, accent)
-        # Decorative room anchors based on the room list.
-        room = blueprint["room_types"][level % len(blueprint["room_types"])]
+            if z not in (cz - 1, cz, cz + 1):
+                put(divider, base + 1, z, accent)
+        room = bp["room_types"][level % len(bp["room_types"])]
         if room == "library":
             for x in (2, w - 3):
                 for z in (2, d - 3):
-                    put(x, base + 1, z, _block_state("minecraft:bookshelf"))
+                    put(x, base + 1, z, _state("minecraft:bookshelf"))
         elif room == "treasure":
-            put(center_x, base + 1, center_z, _block_state("minecraft:chest"))
+            put(cx, base + 1, cz, _state("minecraft:chest"))
         elif room == "workshop":
-            put(center_x, base + 1, center_z, _block_state("minecraft:crafting_table"))
-            put(center_x - 1, base + 1, center_z, _block_state("minecraft:furnace"))
+            put(cx, base + 1, cz, _state("minecraft:crafting_table"))
+            put(cx - 1, base + 1, cz, _state("minecraft:furnace"))
         elif room == "altar":
-            put(center_x, base + 1, center_z, accent)
-            put(center_x, base + 2, center_z, _block_state("minecraft:lantern"))
+            put(cx, base + 1, cz, accent)
+            put(cx, base + 2, cz, _state("minecraft:lantern"))
         elif room == "prison":
-            for x in range(center_x - 1, center_x + 2):
-                put(x, base + 1, center_z, _block_state("minecraft:iron_bars"))
-        # Light source near the central support.
-        put(center_x, base + 2, center_z + 1, _block_state("minecraft:lantern"))
-
-    # Interior staircase: a compact switchback-like stepped run.
+            for x in range(cx - 1, cx + 2):
+                put(x, base + 1, cz, _state("minecraft:iron_bars"))
+        put(cx, base + 2, cz + 1, _state("minecraft:lantern"))
     for level in range(floors - 1):
-        base = level * floor_height + 1
+        base = level * fh + 1
         for step in range(4):
-            put(2 + step, base + step, 2, _block_state(
-                "minecraft:oak_stairs", {"facing": "east", "half": "bottom", "shape": "straight", "waterlogged": "false"}
-            ))
-
-    # Optional balcony on the front facade.
-    if "balcony" in blueprint["features"]:
-        for x in range(center_x - 2, center_x + 3):
-            put(x, floor_height, 0, _block_state("minecraft:oak_slab", {"type": "bottom", "waterlogged": "false"}))
-            if x in (center_x - 2, center_x + 2):
-                put(x, floor_height + 1, 0, _block_state("minecraft:oak_fence"))
-
-    # Optional lookout platform at the top.
-    if "watchtower" in blueprint["features"] and w >= 11 and d >= 11:
-        y = floors * floor_height + 1
-        for x in range(center_x - 2, center_x + 3):
-            for z in range(center_z - 2, center_z + 3):
+            put(2 + step, base + step, 2, _state("minecraft:oak_stairs", {
+                "facing": "east", "half": "bottom", "shape": "straight", "waterlogged": "false"}))
+    if "balcony" in bp["features"]:
+        for x in range(cx - 2, cx + 3):
+            put(x, fh, 0, _state("minecraft:oak_slab", {"type": "bottom", "waterlogged": "false"}))
+            if x in (cx - 2, cx + 2):
+                put(x, fh + 1, 0, _state("minecraft:oak_fence"))
+    if "watchtower" in bp["features"]:
+        y = floors * fh + 1
+        for x in range(cx - 2, cx + 3):
+            for z in range(cz - 2, cz + 3):
                 put(x, y, z, floor)
-        for x, z in ((center_x - 2, center_z - 2), (center_x + 2, center_z - 2),
-                     (center_x - 2, center_z + 2), (center_x + 2, center_z + 2)):
-            put(x, y + 1, z, trim)
-            put(x, y + 2, z, trim)
-
-    # Roof layers shrink inward, making a stepped or pointed silhouette.
-    roof_y = floors * floor_height + 1
-    layers = 1 if blueprint["roof_style"] == "flat" else min(4, max(2, min(w, d) // 5))
+    roof_y = floors * fh + 1
+    layers = 1 if bp["roof_style"] == "flat" else min(5, max(2, min(w, d) // 5))
     for layer in range(layers):
-        inset = 0 if blueprint["roof_style"] == "flat" else layer
-        y = roof_y + layer
+        inset = 0 if bp["roof_style"] == "flat" else layer
         for x in range(inset, w - inset):
             for z in range(inset, d - inset):
                 if layer == 0 or x in (inset, w - inset - 1) or z in (inset, d - inset - 1):
-                    put(x, y, z, roof)
-    if "broken_roof" in blueprint["features"] and layers > 1:
-        for x, z in ((center_x - 2, 1), (center_x + 1, 2), (1, center_z + 2)):
+                    put(x, roof_y + layer, z, roof)
+    if "broken_roof" in bp["features"] and layers > 1:
+        for x, z in ((cx - 2, 1), (cx + 1, 2), (1, cz + 2)):
             blocks.pop((x, roof_y + layers - 1, z), None)
-
-    # Ruins receive controlled gaps and mossy accents, never random corruption.
-    if blueprint["structure_type"] == "ruin" or "broken_roof" in blueprint["features"]:
+    if bp["structure_type"] == "ruin" or "broken_roof" in bp["features"]:
         for level in range(floors):
-            y = level * floor_height + 2
             for x in (1, w - 2):
                 if (x + level) % 2 == 0:
-                    blocks.pop((x, y, 0), None)
-    if "garden" in blueprint["features"]:
+                    blocks.pop((x, level * fh + 2, 0), None)
+    if "garden" in bp["features"]:
         for x, z in ((1, 1), (w - 2, 1), (1, d - 2), (w - 2, d - 2)):
-            put(x, 1, z, _block_state("minecraft:flower_pot"))
-    if "cellar" in blueprint["features"]:
-        # A cellar entrance is represented by a trapdoor and ladder access inside.
-        put(center_x, 1, center_z - 2, _block_state("minecraft:ladder", {"facing": "south"}))
-        put(center_x, 2, center_z - 2, _block_state("minecraft:ladder", {"facing": "south"}))
-        put(center_x, 3, center_z - 2, _block_state("minecraft:oak_trapdoor", {
-            "facing": "north", "half": "top", "open": "false", "powered": "false", "waterlogged": "false"
-        }))
+            put(x, 1, z, _state("minecraft:flower_pot"))
 
-    if len(blocks) > MAX_BLOCKS:
-        raise ValueError(f"Generated structure exceeds the {MAX_BLOCKS:,}-block safety limit.")
+    # Real underground dungeon: a 13x13 chamber below the foundation, with
+    # a perimeter, internal cells, connecting corridor, ladder shaft and loot room.
+    if "dungeon" in bp["features"]:
+        top, bottom = -1, -7
+        for y in range(bottom, top + 1):
+            for x in range(cx - 6, cx + 7):
+                for z in range(cz - 6, cz + 7):
+                    edge = x in (cx - 6, cx + 6) or z in (cz - 6, cz + 6)
+                    if y in (bottom, top) or edge:
+                        put(x, y, z, accent if y == bottom else wall)
+        for y in range(bottom + 1, top):
+            for x in range(cx - 5, cx + 6):
+                for z in range(cz - 5, cz + 6):
+                    put(x, y, z, _state("minecraft:air"))
+        # Two side chambers and a treasure cell separated by barred gates.
+        for z in range(cz - 4, cz + 5):
+            put(cx, -4, z, wall)
+        for z in range(cz - 1, cz + 2):
+            put(cx, -4, z, _state("minecraft:air"))
+        for x in range(cx - 5, cx + 6):
+            put(x, -4, cz + 4, wall)
+        for x in range(cx - 1, cx + 2):
+            put(x, -4, cz + 4, _state("minecraft:iron_bars"))
+        put(cx + 3, -5, cz + 2, _state("minecraft:chest"))
+        put(cx - 3, -5, cz - 2, _state("minecraft:spawner"))
+        # Ladder shaft from ground level to dungeon floor.
+        for y in range(bottom + 1, 2):
+            put(cx, y, cz - 5, _state("minecraft:ladder", {"facing": "south"}))
+        put(cx, 1, cz - 5, _state("minecraft:oak_trapdoor", {
+            "facing": "north", "half": "top", "open": "false", "powered": "false", "waterlogged": "false"}))
+        for x, z in ((cx - 5, cz - 5), (cx + 5, cz - 5), (cx - 5, cz + 5), (cx + 5, cz + 5)):
+            put(x, -2, z, _state("minecraft:lantern"))
+    return blocks
+
+def build_project(project):
+    """Return (size, normalized blocks) for a single building or settlement."""
+    blocks = {}
+    if project["mode"] == "single":
+        blocks.update(_make_building(project))
+    else:
+        width, depth = project["width"], project["depth"]
+        materials = project["materials"]
+        ground = _state(materials["accent"])
+        # Main paths connect each building to the settlement center.
+        cx, cz = width // 2, depth // 2
+        if "main_road" in project["features"]:
+            for bp in project["buildings"]:
+                bx, bz = bp["x"] + bp["width"] // 2, bp["z"] + bp["depth"] // 2
+                x0, z0 = cx, cz
+                while x0 != bx:
+                    blocks[(x0, 0, z0)] = _state("minecraft:gravel")
+                    x0 += 1 if bx > x0 else -1
+                while z0 != bz:
+                    blocks[(x0, 0, z0)] = _state("minecraft:gravel")
+                    z0 += 1 if bz > z0 else -1
+        for bp in project["buildings"]:
+            local = _make_building(bp)
+            for (x, y, z), state in local.items():
+                pos = (bp["x"] + x, y, bp["z"] + z)
+                if pos in blocks and y >= 0:
+                    continue
+                blocks[pos] = state
+        if "central_well" in project["features"]:
+            for y in range(0, 3):
+                for x in range(cx - 2, cx + 3):
+                    for z in range(cz - 2, cz + 3):
+                        if abs(x - cx) == 2 or abs(z - cz) == 2:
+                            blocks[(x, y, z)] = _state("minecraft:cobblestone")
+            blocks[(cx, 1, cz)] = _state("minecraft:water")
+        if "palisade" in project["features"]:
+            for x in range(width):
+                for z in (0, depth - 1):
+                    blocks[(x, 1, z)] = _state("minecraft:oak_fence")
+                if x % 4 == 0:
+                    blocks[(x, 2, 0)] = _state("minecraft:oak_fence")
+                    blocks[(x, 2, depth - 1)] = _state("minecraft:oak_fence")
+            for z in range(depth):
+                for x in (0, width - 1):
+                    blocks[(x, 1, z)] = _state("minecraft:oak_fence")
     if not blocks:
         raise ValueError("The procedural builder produced an empty structure.")
-    min_x = min(pos[0] for pos in blocks)
-    min_y = min(pos[1] for pos in blocks)
-    min_z = min(pos[2] for pos in blocks)
-    max_x = max(pos[0] for pos in blocks)
-    max_y = max(pos[1] for pos in blocks)
-    max_z = max(pos[2] for pos in blocks)
-    normalized = {
-        (x - min_x, y - min_y, z - min_z): state
-        for (x, y, z), state in blocks.items()
-    }
-    size = (max_x - min_x + 1, max_y - min_y + 1, max_z - min_z + 1)
-    return size, normalized
+    if len(blocks) > MAX_BLOCKS:
+        raise ValueError(f"Generated project exceeds the {MAX_BLOCKS:,}-block safety limit.")
+    min_x = min(p[0] for p in blocks)
+    min_y = min(p[1] for p in blocks)
+    min_z = min(p[2] for p in blocks)
+    max_x = max(p[0] for p in blocks)
+    max_y = max(p[1] for p in blocks)
+    max_z = max(p[2] for p in blocks)
+    normalized = {(x-min_x, y-min_y, z-min_z): state for (x,y,z), state in blocks.items()}
+    return (max_x-min_x+1, max_y-min_y+1, max_z-min_z+1), normalized
 
 def _utf(value):
     data = str(value).encode("utf-8")
@@ -285,9 +341,6 @@ def _tag(tag_type, name, payload):
 def _int(value):
     return struct.pack(">i", int(value))
 
-def _string(value):
-    return _utf(value)
-
 def _list_payload(element_type, values):
     return bytes([element_type]) + _int(len(values)) + b"".join(values)
 
@@ -295,69 +348,64 @@ def _compound_payload(entries):
     return b"".join(entries) + b"\x00"
 
 def write_structure_nbt(path, size, blocks):
-    """Write vanilla structure NBT (gzip, big-endian) for Java 1.16.5."""
     states = sorted(set(blocks.values()), key=lambda item: (item[0], item[1]))
     palette_index = {state: index for index, state in enumerate(states)}
-    palette_entries = []
+    palette = []
     for name, properties in states:
         props = []
         if properties:
             props.append(_tag(10, "Properties", _compound_payload([
-                _tag(8, key, _string(value)) for key, value in properties
+                _tag(8, key, _utf(value)) for key, value in properties
             ])))
-        palette_entries.append(_compound_payload([
-            _tag(8, "Name", _string(name)), *props
-        ]))
-    block_entries = []
+        palette.append(_compound_payload([_tag(8, "Name", _utf(name)), *props]))
+    block_list = []
     for (x, y, z), state in sorted(blocks.items(), key=lambda item: (item[0][1], item[0][2], item[0][0])):
-        block_entries.append(_compound_payload([
+        block_list.append(_compound_payload([
             _tag(3, "state", _int(palette_index[state])),
             _tag(9, "pos", _list_payload(3, [_int(x), _int(y), _int(z)])),
         ]))
     root = _compound_payload([
         _tag(3, "DataVersion", _int(DATA_VERSION)),
         _tag(9, "size", _list_payload(3, [_int(v) for v in size])),
-        _tag(9, "palette", _list_payload(10, palette_entries)),
-        _tag(9, "blocks", _list_payload(10, block_entries)),
+        _tag(9, "palette", _list_payload(10, palette)),
+        _tag(9, "blocks", _list_payload(10, block_list)),
         _tag(9, "entities", _list_payload(10, [])),
     ])
-    payload = bytes([10]) + _utf("") + root
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("wb") as handle:
-        handle.write(gzip.compress(payload, mtime=0))
+        handle.write(gzip.compress(bytes([10]) + _utf("") + root, mtime=0))
     return target
 
-def generate_structure(llm, description, minecraft_version, output_path, log, progress=None):
+def generate_structure(llm, description, minecraft_version, output_path, log, progress=None, custom_palette=None):
     if str(minecraft_version).strip() != TARGET_VERSION:
-        raise ValueError(
-            f"The first structure exporter supports Minecraft {TARGET_VERSION} only. "
-            f"The selected version is {minecraft_version}. No file was written."
-        )
+        raise ValueError(f"Structure export currently supports Minecraft {TARGET_VERSION} only; selected {minecraft_version}.")
     if not str(description).strip():
         raise ValueError("Describe the structure before generating it.")
+    custom_palette = custom_palette or {}
+    if not isinstance(custom_palette, dict):
+        raise ValueError("Custom block palette must be a JSON object mapping short keys to namespace:block IDs.")
+    for key, value in custom_palette.items():
+        if not re.fullmatch(r"[a-z0-9_]{1,32}", str(key)) or not RESOURCE_ID.fullmatch(str(value)):
+            raise ValueError(f"Invalid custom palette entry: {key} = {value}")
+    palette = dict(MATERIALS)
+    palette.update(custom_palette)
+    system = SYSTEM_PROMPT + "\nCUSTOM MATERIAL PALETTE (choose keys only):\n" + json.dumps(palette, ensure_ascii=False)
     if progress:
-        progress(10, 100, "Qwen is designing a compact structure blueprint…")
-    log("Structure Designer · asking the model for an architectural blueprint.")
-    raw = llm.text(SYSTEM_PROMPT, (
-        f"USER STRUCTURE REQUEST:\n{description.strip()[:5000]}\n\n"
-        "Design the structure. Return the compact blueprint JSON only."
-    ))
-    blueprint = validate_blueprint(llm.json_from(raw))
+        progress(10, 100, "Qwen is designing the structure or settlement…")
+    log("Structure Designer · asking the model for a compact architectural plan.")
+    raw = llm.text(system, f"USER REQUEST:\n{description.strip()[:5000]}\nReturn the design JSON only.")
+    project = validate_project(llm.json_from(raw), custom_palette)
     if progress:
-        progress(45, 100, "Procedural builder is constructing the block layout…")
-    log(
-        f"Blueprint accepted: {blueprint['name']} · {blueprint['width']}x"
-        f"{blueprint['depth']} · {blueprint['floors']} floor(s) · {blueprint['structure_type']}."
-    )
-    size, blocks = build_blocks(blueprint)
+        progress(45, 100, "Procedural engine is building rooms, dungeons and settlement layout…")
+    size, blocks = build_project(project)
     if progress:
-        progress(75, 100, "Writing Minecraft structure NBT…")
+        progress(75, 100, "Writing Minecraft 1.16.5 structure NBT…")
     write_structure_nbt(output_path, size, blocks)
-    log(f"Structure exported: {output_path}")
-    log(f"Generated {len(blocks):,} blocks; dimensions {size[0]}x{size[1]}x{size[2]}.")
-    return {
-        "success": True, "name": blueprint["name"], "file": str(output_path),
-        "minecraft": TARGET_VERSION, "dimensions": list(size),
-        "block_count": len(blocks), "blueprint": blueprint,
-    }
+    log(f"Generated {len(blocks):,} blocks · {size[0]}x{size[1]}x{size[2]} · {project['mode']}.")
+    # Lightweight sample for the interactive viewport; the NBT contains every block.
+    preview = [[x, y, z, state[0]] for (x, y, z), state in list(blocks.items())[:18000]
+               if not state[0].endswith(":air")]
+    return {"success": True, "name": project["name"], "file": str(output_path),
+            "minecraft": TARGET_VERSION, "dimensions": list(size), "block_count": len(blocks),
+            "mode": project["mode"], "blueprint": project, "preview_blocks": preview}
