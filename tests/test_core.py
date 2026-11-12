@@ -70,7 +70,7 @@ class CoreTests(unittest.TestCase):
                 "title": "One",
                 "quests": [{
                     "tasks": [{"item": "some_mod:unknown_item"}]
-                }]
+                } for _ in range(3)]
             }] * 3
         }
         with self.assertRaises(ValueError):
