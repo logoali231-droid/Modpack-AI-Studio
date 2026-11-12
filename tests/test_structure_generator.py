@@ -1,10 +1,11 @@
 import gzip
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from app.structure_generator import (
-    TARGET_VERSION, build_project, validate_project, write_structure_nbt
+    TARGET_VERSION, build_project, discover_modded_block_palette, validate_project, write_structure_nbt
 )
 
 
@@ -64,6 +65,17 @@ class StructureGeneratorTests(unittest.TestCase):
         palette = {"bad": "Create:No Spaces"}
         with self.assertRaisesRegex(ValueError, "Invalid resource location"):
             validate_project(self.single(), palette)
+
+    def test_scans_mod_jar_blockstate_assets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            jar = Path(temp) / "examplemod.jar"
+            with zipfile.ZipFile(jar, "w") as archive:
+                archive.writestr("assets/examplemod/blockstates/copper_block.json", "{}")
+                archive.writestr("assets/minecraft/blockstates/stone.json", "{}")
+            palette = discover_modded_block_palette(temp)
+            self.assertIn("examplemod_copper_block", palette)
+            self.assertEqual(palette["examplemod_copper_block"], "examplemod:copper_block")
+            self.assertNotIn("minecraft_stone", palette)
 
     def test_procedural_builder_creates_nonempty_bounded_structure(self):
         project = validate_project(self.single())
