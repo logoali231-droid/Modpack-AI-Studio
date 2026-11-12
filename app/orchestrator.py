@@ -91,6 +91,27 @@ class ModpackPipeline:
         self.log(f"AI selected Minecraft {selected}. Reason: {reason}")
         return selected, reason
 
+    def prepare_version(self):
+        """Phase 1: choose and validate the target release without requiring a Prism instance."""
+        concept = str(self.c.get("prompt", "")).strip()
+        if not concept:
+            raise ValueError("Describe the modpack before choosing a Minecraft version.")
+        fallback = str(self.c.get("version", "")).strip()
+        if self.c.get("auto_version", True):
+            self.progress(5, 100, "AI is choosing the Minecraft release…")
+            version, reason = self.select_minecraft_version(concept, fallback)
+        else:
+            version = fallback
+            if not version:
+                raise ValueError("Enter a Minecraft version or enable AI selection.")
+            known = Modrinth(self.log).game_versions()
+            if version not in known:
+                raise ValueError(f"Minecraft {version} is not listed as a released version.")
+            reason = "Selected manually by the user."
+        self.log(f"Target locked for the next step: Minecraft {version} ({self.c.get('loader', 'forge')}).")
+        self.progress(100, 100, f"Version selected: Minecraft {version}. Waiting for your Prism instance.")
+        return version, reason
+
     def discover_candidates(self, requirements, mc, loader):
         """Search the catalog, then retain only projects with a real compatible JAR."""
         queries = []
@@ -221,7 +242,10 @@ class ModpackPipeline:
         self.progress(0, 100, "Preparing your modpack…")
         mc, loader, concept = self.c["version"], self.c["loader"], self.c["prompt"]
         auto_version = bool(self.c.get("auto_version", False))
-        if auto_version:
+        if self.c.get("version_preselected"):
+            version_reason = str(self.c.get("version_reason", "Selected in the preparation step."))
+            auto_version = self.c.get("version_selection", "manual") == "ai"
+        elif auto_version:
             self.progress(3, 100, "Choosing a Minecraft release…")
             mc, version_reason = self.select_minecraft_version(concept, mc)
         else:
