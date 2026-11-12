@@ -1,4 +1,4 @@
-"""Modrinth API lookup, dependency metadata, download, and integrity checks."""
+"""Modrinth API lookup, game-version metadata, dependency metadata, downloads, and integrity checks."""
 import hashlib, time
 from pathlib import Path
 from urllib.parse import quote
@@ -8,7 +8,7 @@ API="https://api.modrinth.com/v2"
 class Modrinth:
     def __init__(self,log):
         self.log=log; self.s=requests.Session()
-        self.s.headers.update({"User-Agent":"ModpackAIStudio/0.2 (desktop; user initiated)"})
+        self.s.headers.update({"User-Agent":"ModpackAIStudio/0.3 (desktop; user initiated)"})
     def get(self,url,params=None):
         for attempt in range(4):
             try:
@@ -20,6 +20,10 @@ class Modrinth:
                 if attempt==3: raise
                 time.sleep(1.5*(attempt+1))
         raise RuntimeError("Modrinth rate limit persisted after retries.")
+    def game_versions(self):
+        """Return official release versions known to Modrinth, newest first."""
+        versions=self.get(f"{API}/tag/game_version")
+        return [v["version"] for v in versions if v.get("version_type")=="release" and v.get("version")]
     def resolve(self,identifier,mc,loader):
         versions=self.get(f"{API}/project/{quote(str(identifier),safe='')}/version",
             {"game_versions":f'["{mc}"]',"loaders":f'["{loader}"]'})
