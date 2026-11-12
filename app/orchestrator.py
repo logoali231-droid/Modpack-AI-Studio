@@ -35,6 +35,26 @@ class ModpackPipeline:
                 return path
         raise ValueError("Could not identify the Minecraft directory in this Prism instance.")
 
+    def prism_minecraft_version(self):
+        """Read the actual Minecraft version from Prism metadata, never infer it from the folder name."""
+        root = Path(self.c["instance"]).expanduser().resolve()
+        metadata = root / "mmc-pack.json"
+        if not metadata.is_file():
+            raise ValueError(
+                "This folder has no mmc-pack.json. Select the Prism instance root folder, "
+                "not its minecraft subfolder."
+            )
+        try:
+            data = json.loads(metadata.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Could not read Prism instance metadata: {exc}") from exc
+        for component in data.get("components", []):
+            if component.get("uid") == "net.minecraft":
+                version = str(component.get("version", "")).strip()
+                if version:
+                    return version
+        raise ValueError("Prism metadata does not contain a net.minecraft component/version.")
+
     def select_minecraft_version(self, concept, fallback):
         """Ask the AI for a target release, then validate it against known released versions."""
         explicit = re.search(r"(?<!\d)(1\.\d{1,2}(?:\.\d{1,2})?)(?!\d)", concept)
@@ -207,6 +227,18 @@ class ModpackPipeline:
         else:
             version_reason = "Selected manually by the user."
 
+        # A Prism instance is tied to one Minecraft release. Refuse mismatches
+        # before searching, backing up, creating folders, or downloading files.
+        prism_mc = self.prism_minecraft_version()
+        if prism_mc != mc:
+            raise ValueError(
+                f"Version mismatch: this Prism instance is Minecraft {prism_mc}, "
+                f"but the modpack target is Minecraft {mc}. No files were installed. "
+                "Choose a Prism instance for the target version, or set the target "
+                f"version to {prism_mc}."
+            )
+        self.log(f"Prism instance verified: Minecraft {prism_mc}.")
+
         catalog = self.c.get("catalog", "Modrinth")
         self.progress(10, 100, f"Planning gameplay requirements for Minecraft {mc}…")
         self.log(f"1/4 · Planning gameplay requirements for {catalog} on Minecraft {mc}…")
@@ -231,10 +263,12 @@ class ModpackPipeline:
         verified = self.discover_candidates(requirements, mc, loader)
         selected = self.select_candidates(verified, concept, mc, loader, catalog)
 
-        # Resolve required dependencies from authoritative file metadata.
+        # Resolve the full required-dependency graph before touching the instance.
+        # A pack with a missing required library must never be partially installed.
         queue = list((project_id, item) for project_id, item in selected.items())
         resolved = {}
         seen = set()
+        unresolved_required = []
         while queue:
             project_id, item = queue.pop(0)
             project_id = str(project_id)
@@ -246,9 +280,11 @@ class ModpackPipeline:
                     item = self.api.resolve(project_id, mc, loader)
                 except Exception as exc:
                     self.log(f"Could not resolve required dependency {project_id}: {exc}")
+                    unresolved_required.append(project_id)
                     continue
             if not item:
-                self.log(f"Required dependency has no compatible file and was skipped: {project_id}")
+                self.log(f"Required dependency has no compatible file: {project_id}")
+                unresolved_required.append(project_id)
                 continue
             resolved[str(item["project_id"])] = item
             for dependency in item.get("dependencies", []):
@@ -257,6 +293,13 @@ class ModpackPipeline:
                     if dependency_id and str(dependency_id) not in seen:
                         queue.append((str(dependency_id), None))
 
+        if unresolved_required:
+            missing = ", ".join(sorted(set(unresolved_required)))
+            raise RuntimeError(
+                "Installation cancelled before downloading: required dependencies "
+                f"have no compatible {mc}/{loader} file: {missing}. "
+                "Choose another Minecraft release or remove the mod that requires them."
+            )
         if not resolved:
             raise RuntimeError(f"No compatible {catalog} files found for Minecraft {mc}/{loader}.")
         self.log(f"Selected {len(selected)} projects; {len(resolved)} including required dependencies.")
@@ -310,24 +353,74 @@ class ModpackPipeline:
         self.log(f"Installed {len(installed)} files; {len(failed)} failed. Manifest saved.")
         self.progress(88, 100, "Mod installation finished.")
 
+        quest_status = {"status": "disabled"}
         if self.c.get("quests"):
+            quest_status = {"status": "failed", "error": "Quest generation did not complete."}
             self.progress(0, 0, "Ollama is generating your three-chapter quest campaign…")
             self.log("4/4 · Designing a three-chapter quest campaign…")
             self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names = ", ".join(item["name"] for item in installed)
             quest_input = f"Concept: {concept}\nMinecraft {mc} {loader}. Installed mods: {names}"
-            raw_quests = self.llm.text(QUEST_SYSTEM, quest_input)
-            self.progress(90, 100, "AI response received. Validating quest campaign…")
-            campaign = validate_campaign(self.llm.json_from(raw_quests))
-            output = mcdir / "config" / "ftbquests" / "quests" / "chapters"
-            output.mkdir(parents=True, exist_ok=True)
-            for index, chapter in enumerate(campaign["chapters"], 1):
-                self.progress(90 + index * 3, 100, f"Writing quest chapter {index} of 3…")
-                (output / f"ai_chapter_{index}.snbt").write_text(
-                    build_chapter(chapter, index), encoding="utf-8"
-                )
-                self.log(f"Quest draft written: ai_chapter_{index}.snbt")
-            self.log("FTB Quests output is a draft; validate against the installed FTB Quests version in-game.")
+            try:
+                raw_quests = self.llm.text(QUEST_SYSTEM, quest_input)
+                self.progress(90, 100, "AI response received. Validating quest campaign…")
+                try:
+                    campaign = validate_campaign(self.llm.json_from(raw_quests))
+                except (ValueError, TypeError, KeyError) as first_error:
+                    self.log(f"Quest response was invalid: {first_error}. Requesting one repair attempt…")
+                    repair_input = (
+                        f"ORIGINAL REQUEST:\n{quest_input}\n\n"
+                        f"VALIDATION ERROR:\n{first_error}\n\n"
+                        "PREVIOUS AI RESPONSE (repair this; do not start over):\n"
+                        f"{raw_quests}\n\n"
+                        "Return a corrected JSON object with exactly three chapters. "
+                        "Each chapter must contain at least one quest, and each quest "
+                        "must contain at least one valid item task. Return JSON only."
+                    )
+                    repaired = self.llm.text(
+                        QUEST_SYSTEM + "\nYou are repairing a failed response. Follow the schema exactly.",
+                        repair_input
+                    )
+                    campaign = validate_campaign(self.llm.json_from(repaired))
 
-        self.progress(100, 100, "Complete. Review the manifest and test the Prism instance.")
+                # Validate everything before writing any chapter files.
+                chapter_files = [
+                    build_chapter(chapter, index)
+                    for index, chapter in enumerate(campaign["chapters"], 1)
+                ]
+                output = mcdir / "config" / "ftbquests" / "quests" / "chapters"
+                output.mkdir(parents=True, exist_ok=True)
+                for index, content in enumerate(chapter_files, 1):
+                    self.progress(90 + index * 3, 100, f"Writing quest chapter {index} of 3…")
+                    (output / f"ai_chapter_{index}.snbt").write_text(content, encoding="utf-8")
+                    self.log(f"Quest draft written: ai_chapter_{index}.snbt")
+                quest_status = {
+                    "status": "generated",
+                    "files": [f"ai_chapter_{index}.snbt" for index in range(1, 4)]
+                }
+                self.log("FTB Quests output is a draft; validate against the installed FTB Quests version in-game.")
+            except Exception as exc:
+                quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+                self.log(
+                    "WARNING · Mods were installed successfully, but quest generation failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+        manifest["quests"] = quest_status
+        (mcdir / "modpack-ai-manifest.json").write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        self.progress(100, 100, "Mod installation complete. Review the manifest and test the Prism instance.")
         self.log("Done. Review the manifest and test the Prism instance.")
+        if quest_status["status"] == "failed":
+            return {
+                "success": True,
+                "quests_failed": True,
+                "message": "Mods installed successfully, but quest generation failed. See the Activity log and manifest."
+            }
+        return {
+            "success": True,
+            "quests_failed": False,
+            "message": "Modpack installation completed. Review the manifest and validate the instance in Prism."
+        }
