@@ -265,6 +265,7 @@ def _make_building(bp):
         put(cx + 3, -5, cz + 2, _state("minecraft:chest"))
         put(cx - 3, -5, cz - 2, _state("minecraft:spawner"))
         # Ladder shaft from ground level to dungeon floor.
+        blocks.pop((cx, 0, cz - 5), None)  # open the floor so the ladder is actually reachable
         for y in range(bottom + 1, 2):
             put(cx, y, cz - 5, _state("minecraft:ladder", {"facing": "south"}))
         put(cx, 1, cz - 5, _state("minecraft:oak_trapdoor", {
@@ -404,7 +405,9 @@ def generate_structure(llm, description, minecraft_version, output_path, log, pr
     write_structure_nbt(output_path, size, blocks)
     log(f"Generated {len(blocks):,} blocks · {size[0]}x{size[1]}x{size[2]} · {project['mode']}.")
     # Lightweight sample for the interactive viewport; the NBT contains every block.
-    preview = [[x, y, z, state[0]] for (x, y, z), state in list(blocks.items())[:18000]
+    preview_source = list(blocks.items())
+    preview_stride = max(1, len(preview_source) // 5000)
+    preview = [[x, y, z, state[0]] for (x, y, z), state in preview_source[::preview_stride][:5000]
                if not state[0].endswith(":air")]
     return {"success": True, "name": project["name"], "file": str(output_path),
             "minecraft": TARGET_VERSION, "dimensions": list(size), "block_count": len(blocks),
