@@ -39,8 +39,20 @@ def research(query, log=lambda message: None, max_pages=4):
     results = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(accept_downloads=False, service_workers="block", java_script_enabled=True)
+        page = context.new_page()
         page.set_default_timeout(12000)
+
+        # Validate every navigation/resource request, including redirects.
+        # Block localhost, private LAN services, link-local metadata and unsafe schemes.
+        def guard_request(route):
+            if _public_http_url(route.request.url):
+                route.continue_()
+            else:
+                log("Browser research blocked a non-public or unsafe URL.")
+                route.abort()
+
+        context.route("**/*", guard_request)
         try:
             search_url = "https://html.duckduckgo.com/html/?q=" + quote(query)
             page.goto(search_url, wait_until="domcontentloaded")
@@ -67,5 +79,6 @@ def research(query, log=lambda message: None, max_pages=4):
                 except Exception as exc:
                     log(f"Browser research skipped {href}: {exc}")
         finally:
+            context.close()
             browser.close()
     return results
