@@ -67,7 +67,7 @@ class StructureGeneratorTests(unittest.TestCase):
             target = Path(temp) / "tower.nbt"
             write_structure_nbt(target, size, blocks)
             raw = target.read_bytes()
-            self.assertEqual(raw[:2], b"\\x1f\\x8b")
+            self.assertEqual(raw[:2], bytes([0x1f, 0x8b]))
             nbt = gzip.decompress(raw)
             self.assertEqual(nbt[0], 10)  # TAG_Compound root
             self.assertIn(b"DataVersion", nbt)
