@@ -412,7 +412,7 @@ class ModpackPipeline:
                         "PREVIOUS AI RESPONSE (repair this; do not start over):\n"
                         f"{raw_quests}\n\n"
                         "Return a corrected JSON object with exactly three chapters. "
-                        "Each chapter must contain at least one quest, and each quest "
+                        "Each chapter must contain at least three quests, and each quest "
                         "must contain at least one valid item task. Return JSON only."
                     )
                     repaired = self.llm.text(
