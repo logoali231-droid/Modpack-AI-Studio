@@ -128,6 +128,53 @@ class CurseForge:
         self.log(f"No compatible CurseForge JAR: project {mod_id} ({mc}/{loader})")
         return None
 
+    def details(self, identifier):
+        """Fetch the full CurseForge description and project metadata."""
+        mod_id = int(identifier)
+        project = self.get(f"{API}/mods/{mod_id}")
+        if not isinstance(project, dict):
+            raise ValueError(f"Unexpected CurseForge project response for {identifier}")
+        try:
+            description = self.get(f"{API}/mods/{mod_id}/description")
+        except requests.RequestException as exc:
+            self.log(f"Could not fetch full CurseForge description for {mod_id}: {exc}")
+            description = ""
+        if isinstance(description, dict):
+            description = description.get("description", "")
+        authors = [
+            author.get("name", "") for author in project.get("authors", [])
+            if author.get("name")
+        ]
+        versions = project.get("latestFilesIndexes", []) or []
+        game_versions = sorted({
+            str(version.get("gameVersion")) for version in versions if version.get("gameVersion")
+        })
+        loaders = sorted({
+            {1: "forge", 4: "fabric", 5: "quilt", 6: "neoforge"}.get(version.get("modLoader"), "")
+            for version in versions if version.get("modLoader")
+        } - {""})
+        links = project.get("links") or {}
+        return {
+            "source": "curseforge",
+            "project_id": str(project.get("id") or identifier),
+            "slug": project.get("slug", ""),
+            "name": project.get("name") or str(identifier),
+            "summary": project.get("summary", ""),
+            "description": str(description or ""),
+            "authors": authors,
+            "categories": [
+                category.get("name", "") for category in project.get("categories", [])
+                if category.get("name")
+            ],
+            "game_versions": game_versions,
+            "loaders": loaders,
+            "downloads": project.get("downloadCount", 0),
+            "icon_url": (project.get("logo") or {}).get("url", ""),
+            "website": links.get("websiteUrl") or links.get("sourceUrl") or "",
+            "license": "",
+            "date_modified": project.get("dateModified", ""),
+        }
+
     def download(self, mod, dest):
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
