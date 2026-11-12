@@ -7,8 +7,11 @@ from .quests import build_chapter, validate_campaign
 from .prompts import VERSION_SYSTEM, modpack_system, QUEST_SYSTEM
 
 class ModpackPipeline:
-    def __init__(self,cfg,log):
+    def __init__(self,cfg,log,progress=None):
         self.c,self.log=cfg,log
+        self.progress_cb=progress or (lambda value,maximum,message: None)
+    def progress(self,value,maximum,message):
+        self.progress_cb(value,maximum,message)
         self.llm=LLMClient(cfg["provider"],cfg.get("api_key",""),cfg["model"],log,cfg.get("ollama_url","http://localhost:11434"))
         self.api = (CurseForge(log, cfg.get("curseforge_key", ""))
                     if cfg.get("catalog") == "CurseForge" else Modrinth(log))
@@ -47,13 +50,16 @@ class ModpackPipeline:
         self.log(f"AI selected Minecraft {selected}. Reason: {reason}")
         return selected, reason
     def run(self):
+        self.progress(0,100,"Preparing your modpack…")
         mc,loader,concept=self.c["version"],self.c["loader"],self.c["prompt"]
         auto_version=bool(self.c.get("auto_version",False))
         if auto_version:
+            self.progress(3,100,"Choosing a Minecraft release…")
             mc,version_reason=self.select_minecraft_version(concept,mc)
         else:
             version_reason="Selected manually by the user."
         catalog = self.c.get("catalog", "Modrinth")
+        self.progress(10,100,f"Designing the modpack for Minecraft {mc}…")
         self.log(f"1/4 · Designing the modpack for {catalog} on Minecraft {mc}…")
         system=modpack_system(catalog)
         user_brief=(f"FIXED TARGET\\nMinecraft Java: {mc}\\nModloader: {loader}\\nCatalog: {catalog}\\n\\n"
@@ -63,6 +69,7 @@ class ModpackPipeline:
         data=self.llm.json_from(raw); proposed=data.get("mods") if isinstance(data,dict) else data
         if not isinstance(proposed,list) or not proposed: raise ValueError("AI did not return a non-empty mods array.")
         proposed=proposed[:25]; self.log(f"AI proposed {len(proposed)} projects.")
+        self.progress(25,100,"Checking project compatibility and dependencies…")
         self.log(f"2/4 · Checking {catalog} compatibility and dependencies…")
         queue=[]; resolved={}; seen=set()
         for entry in proposed:
@@ -116,13 +123,17 @@ class ModpackPipeline:
                     if depid and depid not in resolved and depid not in seen: queue.append((depid,""))
         if not resolved: raise RuntimeError(f"No compatible {catalog} files found for Minecraft {mc}/{loader}.")
         self.log(f"Found {len(resolved)} compatible projects including required dependencies.")
+        self.progress(50,100,f"{len(resolved)} compatible projects verified. Preparing installation…")
         mcdir=self.minecraft_dir(); modsdir=mcdir/"mods"; modsdir.mkdir(parents=True,exist_ok=True)
         self.log("3/4 · Installing verified JAR files…")
         if self.c.get("backup") and any(modsdir.iterdir()):
             backup=modsdir.with_name("mods.backup-"+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
             shutil.copytree(modsdir,backup); self.log(f"Backup created: {backup}")
         installed=[]; failed=[]
-        for item in resolved.values():
+        total_downloads=len(resolved)
+        for download_index,item in enumerate(resolved.values(),1):
+            self.progress(50+int(35*(download_index-1)/max(total_downloads,1)),100,
+                          f"Installing mod {download_index} of {total_downloads}: {item['name']}")
             try:
                 path=self.api.download(item,modsdir)
                 installed.append({"name":item["name"],"project_id":item["project_id"],"version_id":item["version_id"],"file":path.name})
@@ -133,8 +144,11 @@ class ModpackPipeline:
             "created":datetime.datetime.now(datetime.timezone.utc).isoformat(),"installed":installed,"failed":failed}
         (mcdir/"modpack-ai-manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
         self.log(f"Installed {len(installed)} files; {len(failed)} failed. Manifest saved.")
+        self.progress(88,100,"Mod installation finished.")
         if self.c.get("quests"):
+            self.progress(0,0,"Ollama is generating your three-chapter quest campaign…")
             self.log("4/4 · Designing a three-chapter quest campaign…")
+            self.log("Quest generation can take a while on a local model. Waiting for the AI response…")
             names=", ".join(x["name"] for x in installed)
             rawq=self.llm.text(QUEST_SYSTEM,f"Concept: {concept}\\nMinecraft {mc} {loader}. Installed mods: {names}")
             campaign=validate_campaign(self.llm.json_from(rawq))
@@ -143,4 +157,5 @@ class ModpackPipeline:
                 (out/f"ai_chapter_{i}.snbt").write_text(build_chapter(ch,i),encoding="utf-8")
                 self.log(f"Quest draft written: ai_chapter_{i}.snbt")
             self.log("FTB Quests output is a draft; validate against the installed FTB Quests version in-game.")
+        self.progress(100,100,"Complete. Review the manifest and test the Prism instance.")
         self.log("Done. Review the manifest and test the Prism instance.")
