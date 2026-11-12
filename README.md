@@ -5,11 +5,17 @@
 ## Features
 - Linux Mint desktop GUI (PySide6).
 - Natural-language modpack design using local Ollama, OpenAI, or Google Gemini.
+- **AI-selected Minecraft version:** enabled by default. Describe the gameplay and mod requirements; the AI recommends a stable Minecraft release, and the app checks that it is a recognized release before searching for files. You can disable this and enter a version manually.
 - Modrinth project/version lookup for Minecraft + Forge/Fabric/NeoForge/Quilt.
 - Required dependency resolution and JAR hash verification.
 - Installs into an existing Prism Launcher instance, with optional mods-folder backup.
 - Generates a three-chapter FTB Quests campaign draft and an install manifest.
 - API keys stored in the Linux desktop keyring, never in the repository.
+
+## How AI version selection works
+The app first asks the selected AI provider to choose a Minecraft Java release based on your prompt. It then validates that release against Modrinth's public list of released game versions. Only after validation does it ask the AI to design the mod list for that exact version and loader. Each candidate mod is then checked against the selected Minecraft version and loader before download. If the AI proposes an unknown or non-release version, generation stops before installing anything. The Activity log explains the choice, and the manifest records the chosen version and rationale.
+
+The AI chooses the Minecraft version, while the user still chooses the modloader. If your prompt names a specific version or a mod with a known version requirement, the AI is instructed to respect it. Compatibility is checked per project, but this does not guarantee that every mod works conflict-free with every other mod.
 
 ## Free by design
 No subscription, credits, hosted backend, or app fee. For AI with no API bill, install [Ollama](https://ollama.com):
@@ -27,7 +33,7 @@ cd Modpack-AI-Studio
 chmod +x launch.sh
 ./launch.sh
 ```
-Select Ollama (local, free), model `qwen2.5:3b`, your Minecraft version/loader, and the Prism instance folder.
+Select Ollama (local, free), model `qwen2.5:3b`, your modloader, and the Prism instance folder. Keep **Let AI choose the Minecraft version from my prompt** enabled, or turn it off to enter a version manually.
 
 ## Current scope and caveats
 This is an early Modrinth-first desktop application, not a feature-complete Modbot.gg clone. CurseForge, shader/resource-pack management, automatic loader installation, visual dependency graphs, and one-click launching are not included yet. AI suggestions can conflict despite version filtering. FTB Quests output is a draft: schema varies by FTB Quests version and must be validated in-game before distribution. Back up your instance and close Minecraft before installing mods.
