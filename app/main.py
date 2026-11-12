@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QComboBox, QTextEdit, QPushButton, QLabel, QProgressBar,
     QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea
 )
-from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt
+from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt, QPointF\nfrom PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
 import keyring
 from .mod_database import ModDatabase
 from .orchestrator import ModpackPipeline
@@ -55,6 +55,104 @@ QCheckBox { spacing: 8px; color: #d1d5db; }
 QCheckBox::indicator { width: 16px; height: 16px; }
 QStatusBar { color: #9ca3af; }
 """
+
+class StructurePreview(QWidget):
+    """Small interactive isometric voxel preview; drag to rotate, wheel to zoom."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(280)
+        self.setMinimumWidth(420)
+        self.setMouseTracking(True)
+        self.blocks = []
+        self.angle = 0.65
+        self.zoom = 1.0
+        self._drag_pos = None
+        self.setToolTip("Drag to rotate the structure. Use the mouse wheel to zoom.")
+
+    def set_blocks(self, blocks):
+        self.blocks = blocks or []
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.position().toPoint()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None:
+            pos = event.position().toPoint()
+            self.angle += (pos.x() - self._drag_pos.x()) * 0.012
+            self._drag_pos = pos
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+
+    def wheelEvent(self, event):
+        self.zoom = max(0.35, min(3.0, self.zoom * (1.12 if event.angleDelta().y() > 0 else 0.89)))
+        self.update()
+
+    @staticmethod
+    def _color(block_id):
+        palette = {
+            "stone": QColor("#89939f"), "wood": QColor("#a8794c"),
+            "glass": QColor("#77b9d1"), "leaves": QColor("#56875a"),
+            "water": QColor("#477fc0"), "iron": QColor("#aeb8c2"),
+            "gold": QColor("#d2ad4d"), "brick": QColor("#a66b59"),
+            "lantern": QColor("#e5bd62"), "chest": QColor("#b78345"),
+        }
+        key = block_id.split(":")[-1]
+        for hint, color in palette.items():
+            if hint in key:
+                return color
+        return QColor("#89939f")
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#0b1220"))
+        if not self.blocks:
+            painter.setPen(QColor("#9ca3af"))
+            painter.drawText(self.rect(), Qt.AlignCenter,
+                             "3D preview will appear here\\nDrag to rotate · scroll to zoom")
+            return
+        import math
+        cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
+        projected = []
+        min_x = min_y = float("inf")
+        max_x = max_y = float("-inf")
+        for item in self.blocks:
+            x, y, z, block_id = item
+            rx, rz = x * cos_a - z * sin_a, x * sin_a + z * cos_a
+            px = (rx - rz) * 0.8660254
+            py = (rx + rz) * 0.5 - y
+            projected.append((rx + rz + y * 0.01, px, py, self._color(block_id)))
+            min_x, max_x = min(min_x, px), max(max_x, px)
+            min_y, max_y = min(min_y, py), max(max_y, py)
+        span_x, span_y = max(max_x - min_x, 1), max(max_y - min_y, 1)
+        scale = min((self.width() - 44) / (span_x + 2.5),
+                    (self.height() - 44) / (span_y + 2.5)) * self.zoom
+        scale = max(1.0, min(scale, 24.0))
+        ox = self.width() / 2 - (min_x + max_x) * scale / 2
+        oy = self.height() / 2 + (min_y + max_y) * scale / 2
+        half_w, half_h = scale * 0.433, scale * 0.25
+        painter.setPen(QPen(QColor("#111827"), max(0.5, scale * 0.025)))
+        for _depth, px, py, color in sorted(projected, key=lambda v: v[0]):
+            top = QPointF(ox + px * scale, oy - py * scale)
+            left = QPointF(top.x() - half_w, top.y() + half_h)
+            back = QPointF(top.x(), top.y() + half_h * 2)
+            right = QPointF(top.x() + half_w, top.y() + half_h)
+            down_left = QPointF(left.x(), left.y() + scale)
+            down_back = QPointF(back.x(), back.y() + scale)
+            down_right = QPointF(right.x(), right.y() + scale)
+            painter.setBrush(color.lighter(125))
+            painter.drawPolygon(QPolygonF([top, right, back, left]))
+            painter.setBrush(color.darker(125))
+            painter.drawPolygon(QPolygonF([left, back, down_back, down_left]))
+            painter.setBrush(color.darker(150))
+            painter.drawPolygon(QPolygonF([back, right, down_right, down_back]))
+        painter.setPen(QColor("#9ca3af"))
+        painter.drawText(12, 22, f"{len(self.blocks):,} preview blocks  ·  drag to rotate  ·  wheel to zoom")
+
 
 class Worker(QThread):
     log = Signal(str)
@@ -106,7 +204,8 @@ class Worker(QThread):
                     self.cfg.get("structure_version", "1.16.5"),
                     self.cfg.get("structure_output", ""),
                     self.log.emit,
-                    self.progress.emit
+                    self.progress.emit,
+                    self.cfg.get("structure_palette", {})
                 )
                 self.done.emit(True, "Structure generated successfully.", {
                     "phase": "structure_generated", **result
@@ -423,18 +522,26 @@ class MainWindow(QMainWindow):
         structure_output_row = QHBoxLayout()
         structure_output_row.addWidget(self.structure_output, 1)
         structure_output_row.addWidget(structure_browse)
+        self.structure_palette = QTextEdit()
+        self.structure_palette.setMaximumHeight(78)
+        self.structure_palette.setPlaceholderText(
+            'Optional mod block palette JSON, e.g. {"create_brass":"create:brass_block","copper_casing":"create:copper_casing"}'
+        )
         structure_form.addRow("Target version", self.structure_version)
         structure_form.addRow("Output file", structure_output_row)
+        structure_form.addRow("Optional mod block palette", self.structure_palette)
         structure_layout.addLayout(structure_form)
         structure_layout.addWidget(QLabel(
-            "Current limits: 9–25 blocks wide/deep, 1–4 floors, bounded vanilla palette. "
-            "This creates an importable structure file, not automatic world generation. "
-            "Do not open the output in a text editor."
+            "Supports single builds, settlements, real underground dungeons and custom namespace:block IDs. "
+            "Preview: drag to rotate, wheel to zoom. Export remains Minecraft Java 1.16.5 NBT. "
+            "Mod block IDs are syntax-checked, not verified against installed mod registries."
         ))
-        self.structure_generate_button = QPushButton("Generate custom structure with AI")
+        self.structure_generate_button = QPushButton("Generate structure / settlement with AI")
         self.structure_generate_button.setMinimumHeight(42)
         self.structure_generate_button.clicked.connect(self.generate_structure)
         structure_layout.addWidget(self.structure_generate_button)
+        self.structure_preview = StructurePreview()
+        structure_layout.addWidget(self.structure_preview, 2)
         self.structure_result = QTextEdit()
         self.structure_result.setReadOnly(True)
         self.structure_result.setPlaceholderText("Blueprint summary, block count and output path will appear here.")
@@ -604,6 +711,19 @@ class MainWindow(QMainWindow):
         cfg["structure_description"] = description
         cfg["structure_version"] = "1.16.5"
         cfg["structure_output"] = str(Path(output).expanduser())
+        palette_text = self.structure_palette.toPlainText().strip()
+        if palette_text:
+            import json
+            try:
+                palette = json.loads(palette_text)
+                if not isinstance(palette, dict):
+                    raise ValueError("Palette must be a JSON object.")
+                cfg["structure_palette"] = palette
+            except (json.JSONDecodeError, ValueError) as exc:
+                QMessageBox.warning(self, "Invalid block palette", str(exc))
+                return
+        else:
+            cfg["structure_palette"] = {}
         self.launch_worker(cfg)
 
     def start(self):
@@ -850,7 +970,7 @@ class MainWindow(QMainWindow):
     def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(True)
@@ -912,6 +1032,7 @@ class MainWindow(QMainWindow):
                 "blueprint": payload.get("blueprint"),
             }
             self.structure_result.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
+            self.structure_preview.set_blocks(payload.get("preview_blocks", []))
             self.statusBar().showMessage(message)
             QMessageBox.information(
                 self, "Structure generated",
