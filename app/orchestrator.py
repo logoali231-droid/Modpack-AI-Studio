@@ -1,5 +1,5 @@
 from pathlib import Path
-import json, shutil, datetime
+import json, shutil, datetime, re
 from .llm import LLMClient
 from .modrinth import Modrinth
 from .curseforge import CurseForge
@@ -13,11 +13,22 @@ class ModpackPipeline:
                     if cfg.get("catalog") == "CurseForge" else Modrinth(log))
     def minecraft_dir(self):
         root=Path(self.c["instance"]).expanduser().resolve()
-        for p in (root/".minecraft",root/"minecraft",root):
-            if p.is_dir() and (p.name==".minecraft" or (p/"mods").exists() or (p/"config").exists()): return p
+        # Prism stores game files in instance/minecraft, even before mods/config exist.
+        for p in (root/"minecraft",root/".minecraft",root):
+            if p.is_dir() and (p.name in ("minecraft",".minecraft") or (p/"mods").exists() or (p/"config").exists()): return p
         raise ValueError("Could not identify the Minecraft directory in this Prism instance.")
     def select_minecraft_version(self, concept, fallback):
         """Ask the AI for a target release, then validate it against known released versions."""
+        # A version explicitly named by the user is a hard constraint.
+        explicit = re.search(r"(?<!\d)(1\.\d{1,2}(?:\.\d{1,2})?)(?!\d)", concept)
+        versions=Modrinth(self.log).game_versions()
+        if explicit:
+            selected=explicit.group(1)
+            if selected not in versions:
+                raise ValueError(f"Prompt explicitly requests Minecraft {selected}, but Modrinth does not list it as a release.")
+            reason="Explicitly requested in the modpack prompt; automatic selection did not override it."
+            self.log(f"Using explicitly requested Minecraft version {selected}.")
+            return selected, reason
         self.log("AI: choosing a Minecraft release based on your modpack description…")
         system=(
             'You are selecting a Minecraft Java Edition version for a modpack. Return ONLY JSON: '
@@ -36,7 +47,6 @@ class ModpackPipeline:
         selected=str(choice.get("minecraft_version","")).strip()
         if not selected: raise ValueError("AI did not return minecraft_version.")
         # Use the official release list exposed by Modrinth's public version tags.
-        versions=Modrinth(self.log).game_versions()
         if selected not in versions:
             raise ValueError(f"AI selected Minecraft {selected}, but it is not a recognized release version. "
                              "No files were downloaded. Disable automatic selection and choose a version manually.")
@@ -57,7 +67,7 @@ class ModpackPipeline:
         else:
             identity = '"name":"...","slug":"exact Modrinth project slug"'
         system=(f'You are a careful Minecraft modpack architect. Return ONLY JSON: {{"mods":[{{{identity},"reason":"..."}}]}}. '
-          'Suggest 15-20 projects if the ecosystem supports it. Never fabricate project names or identifiers. Prefer real, maintained projects compatible with the exact game version and loader. Avoid duplicate functionality and obvious conflicts.')
+          'Suggest 15-20 actual mods if the ecosystem supports it. Never fabricate project names or identifiers. Prefer real, maintained projects compatible with the exact game version and loader. Do not list Forge/Fabric/NeoForge/Quilt themselves as projects. Avoid duplicate functionality and obvious conflicts.')
         raw=self.llm.text(system,f"Minecraft: {mc}\nLoader: {loader}\nCatalog: {catalog}\nConcept: {concept}\nReturn a curated list.")
         data=self.llm.json_from(raw); proposed=data.get("mods") if isinstance(data,dict) else data
         if not isinstance(proposed,list) or not proposed: raise ValueError("AI did not return a non-empty mods array.")
