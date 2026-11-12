@@ -2,13 +2,15 @@ from pathlib import Path
 import json, shutil, datetime
 from .llm import LLMClient
 from .modrinth import Modrinth
+from .curseforge import CurseForge
 from .quests import build_chapter, validate_campaign
 
 class ModpackPipeline:
     def __init__(self,cfg,log):
         self.c,self.log=cfg,log
         self.llm=LLMClient(cfg["provider"],cfg.get("api_key",""),cfg["model"],log,cfg.get("ollama_url","http://localhost:11434"))
-        self.api=Modrinth(log)
+        self.api = (CurseForge(log, cfg.get("curseforge_key", ""))
+                    if cfg.get("catalog") == "CurseForge" else Modrinth(log))
     def minecraft_dir(self):
         root=Path(self.c["instance"]).expanduser().resolve()
         for p in (root/".minecraft",root/"minecraft",root):
@@ -16,19 +18,24 @@ class ModpackPipeline:
         raise ValueError("Could not identify the Minecraft directory in this Prism instance.")
     def run(self):
         mc,loader,concept=self.c["version"],self.c["loader"],self.c["prompt"]
-        self.log("1/4 · Designing the modpack…")
-        system=('You are a careful Minecraft modpack architect. Return ONLY JSON: {"mods":[{"name":"...","slug":"exact Modrinth project slug","reason":"..."}]}. '
-          'Suggest 15-20 projects if the ecosystem supports it. Never fabricate slugs. Prefer real, maintained projects compatible with the exact game version and loader. Avoid duplicate functionality and obvious conflicts.')
-        raw=self.llm.text(system,f"Minecraft: {mc}\nLoader: {loader}\nConcept: {concept}\nReturn a curated list.")
+        catalog = self.c.get("catalog", "Modrinth")
+        self.log(f"1/4 · Designing the modpack for {catalog}…")
+        if catalog == "CurseForge":
+            identity = '"name":"exact CurseForge project name"'
+        else:
+            identity = '"name":"...","slug":"exact Modrinth project slug"'
+        system=(f'You are a careful Minecraft modpack architect. Return ONLY JSON: {{"mods":[{{{identity},"reason":"..."}}]}}. '
+          'Suggest 15-20 projects if the ecosystem supports it. Never fabricate project names or identifiers. Prefer real, maintained projects compatible with the exact game version and loader. Avoid duplicate functionality and obvious conflicts.')
+        raw=self.llm.text(system,f"Minecraft: {mc}\nLoader: {loader}\nCatalog: {catalog}\nConcept: {concept}\nReturn a curated list.")
         data=self.llm.json_from(raw); proposed=data.get("mods") if isinstance(data,dict) else data
         if not isinstance(proposed,list) or not proposed: raise ValueError("AI did not return a non-empty mods array.")
         proposed=proposed[:25]; self.log(f"AI proposed {len(proposed)} projects.")
-        self.log("2/4 · Checking Modrinth compatibility and dependencies…")
+        self.log(f"2/4 · Checking {catalog} compatibility and dependencies…")
         queue=[]; resolved={}; seen=set()
         for entry in proposed:
             if not isinstance(entry,dict): continue
-            ident=(entry.get("slug") or "").strip()
-            if not ident and entry.get("name"):
+            ident = (entry.get("slug") or "").strip() if catalog == "Modrinth" else ""
+            if entry.get("name") and (catalog == "CurseForge" or not ident):
                 hit=self.api.search(entry["name"],mc,loader)
                 if hit: ident=hit.get("slug") or hit.get("project_id")
             if ident: queue.append(ident)
@@ -44,7 +51,7 @@ class ModpackPipeline:
                 if dep.get("dependency_type")=="required":
                     depid=dep.get("project_id")
                     if depid and depid not in resolved and depid not in seen: queue.append(depid)
-        if not resolved: raise RuntimeError("No compatible Modrinth files found for this Minecraft version/loader.")
+        if not resolved: raise RuntimeError(f"No compatible {catalog} files found for this Minecraft version/loader.")
         self.log(f"Found {len(resolved)} compatible projects including required dependencies.")
         mcdir=self.minecraft_dir(); modsdir=mcdir/"mods"; modsdir.mkdir(parents=True,exist_ok=True)
         self.log("3/4 · Installing verified JAR files…")
@@ -58,7 +65,7 @@ class ModpackPipeline:
                 installed.append({"name":item["name"],"project_id":item["project_id"],"version_id":item["version_id"],"file":path.name})
             except Exception as exc:
                 failed.append({"file":item["name"],"error":str(exc)}); self.log(f"Download failed: {item['name']}: {exc}")
-        manifest={"app":"Modpack AI Studio","minecraft":mc,"loader":loader,"concept":concept,
+        manifest={"app":"Modpack AI Studio","minecraft":mc,"loader":loader,"catalog":catalog,"concept":concept,
             "created":datetime.datetime.now(datetime.timezone.utc).isoformat(),"installed":installed,"failed":failed}
         (mcdir/"modpack-ai-manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
         self.log(f"Installed {len(installed)} files; {len(failed)} failed. Manifest saved.")
