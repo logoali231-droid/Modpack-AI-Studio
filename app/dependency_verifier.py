@@ -130,6 +130,25 @@ def _fabric_metadata(archive, filename):
                 "source": filename + ":" + field,
                 "kind": kind,
             })
+    if filename == "quilt.mod.json":
+        loader = data.get("quilt_loader") or {}
+        quilt_id = str(loader.get("id") or "").strip()
+        quilt_version = str(loader.get("version") or "").strip()
+        if quilt_id:
+            ids = [quilt_id]
+            versions = {quilt_id: quilt_version} if quilt_version else {}
+        for field, kind, mandatory in (("depends", "requires", True), ("breaks", "breaks", False)):
+            entries = loader.get(field) or []
+            if not isinstance(entries, list):
+                continue
+            for dep in entries:
+                if not isinstance(dep, dict) or not dep.get("id"):
+                    continue
+                dependencies.append({
+                    "owner": quilt_id or "unknown", "id": str(dep["id"]),
+                    "mandatory": mandatory, "range": str(dep.get("versions", "")),
+                    "side": "BOTH", "source": filename + ":" + field, "kind": kind,
+                })
     for provided in data.get("provides", []):
         if isinstance(provided, str) and provided.strip():
             ids.append(provided.strip())
@@ -184,6 +203,26 @@ def _single_range_matches(version, expression):
     expression = expression.strip()
     if not expression or expression in ("*", "any"):
         return True
+    if expression.startswith((">=", "<=", ">", "<", "^", "~")):
+        operator = expression[:2] if expression[:2] in (">=", "<=") else expression[:1]
+        target = expression[len(operator):].strip()
+        cmp = _compare_versions(version, target)
+        if cmp is None:
+            return None
+        if operator == ">=": return cmp >= 0
+        if operator == "<=": return cmp <= 0
+        if operator == ">": return cmp > 0
+        if operator == "<": return cmp < 0
+        if operator == "^":
+            base, current = _version_key(target), _version_key(version)
+            return current is not None and base is not None and current >= base and current[0] == base[0]
+        if operator == "~":
+            base, current = _version_key(target), _version_key(version)
+            return current is not None and base is not None and current >= base and current[:2] == base[:2]
+    if expression.endswith(".x") or expression.endswith(".*"):
+        prefix = expression[:-2].split(".")
+        actual = str(version).split(".")
+        return actual[:len(prefix)] == prefix
     if expression.startswith(("[", "(")) and expression.endswith(("]", ")")):
         body = expression[1:-1]
         if "," not in body:
@@ -213,8 +252,9 @@ def version_satisfies(version, expression):
     if not expression or expression in ("*", "any"):
         return True
     # Maven permits unions such as [1.0,1.5),[2.0,)
-    parts = re.findall(r"[[(][^])]*[])]|[^,]+", expression)
-    if len(parts) > 1 and all(part.strip().startswith(("[", "(")) for part in parts):
+    parts = re.findall(r"[\\[(][^\\]\\)]*[\\])]", expression)
+    compact = expression.replace(" ", "")
+    if parts and "".join(parts) == compact and len(parts) > 1:
         outcomes = [_single_range_matches(version, part) for part in parts]
         if True in outcomes:
             return True
