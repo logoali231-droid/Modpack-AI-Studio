@@ -528,9 +528,22 @@ class MainWindow(QMainWindow):
         self.structure_palette.setPlaceholderText(
             'Optional mod block palette JSON, e.g. {"create_brass":"create:brass_block","copper_casing":"create:copper_casing"}'
         )
+        self.structure_mods_folder = QLineEdit()
+        self.structure_mods_folder.setPlaceholderText("Optional Prism instance minecraft/mods folder")
+        mods_browse = QPushButton("Browse…")
+        mods_browse.setObjectName("secondaryButton")
+        mods_browse.clicked.connect(self.browse_structure_mods)
+        mods_scan = QPushButton("Scan installed mod JARs")
+        mods_scan.setObjectName("secondaryButton")
+        mods_scan.clicked.connect(self.scan_structure_mods)
+        mods_row = QHBoxLayout()
+        mods_row.addWidget(self.structure_mods_folder, 1)
+        mods_row.addWidget(mods_browse)
+        mods_row.addWidget(mods_scan)
+        structure_form.addRow("Installed mods folder", mods_row)
         structure_form.addRow("Target version", self.structure_version)
         structure_form.addRow("Output file", structure_output_row)
-        structure_form.addRow("Optional mod block palette", self.structure_palette)
+        structure_form.addRow("Custom block palette", self.structure_palette)
         structure_layout.addLayout(structure_form)
         structure_layout.addWidget(QLabel(
             "Supports single builds, settlements, real underground dungeons and custom namespace:block IDs. "
@@ -681,6 +694,42 @@ class MainWindow(QMainWindow):
                 )
                 return
             self.world_path.setText(path)
+
+    def browse_structure_mods(self):
+        path = QFileDialog.getExistingDirectory(self, "Select the Prism instance minecraft/mods folder")
+        if path:
+            self.structure_mods_folder.setText(path)
+
+    def scan_structure_mods(self):
+        folder = self.structure_mods_folder.text().strip()
+        if not folder:
+            QMessageBox.warning(self, "Mods folder required", "Choose the Prism instance's minecraft/mods folder first.")
+            return
+        try:
+            from .structure_generator import discover_modded_block_palette
+            discovered = discover_modded_block_palette(folder)
+            if not discovered:
+                QMessageBox.information(
+                    self, "No block assets found",
+                    "No blockstate assets were found in the JAR files. You can still enter namespace:block IDs manually."
+                )
+                return
+            import json
+            existing_text = self.structure_palette.toPlainText().strip()
+            existing = json.loads(existing_text) if existing_text else {}
+            if not isinstance(existing, dict):
+                raise ValueError("The existing palette must be a JSON object.")
+            for key, value in discovered.items():
+                existing.setdefault(key, value)
+            self.structure_palette.setPlainText(json.dumps(existing, ensure_ascii=False, indent=2))
+            QMessageBox.information(
+                self, "Mod block candidates found",
+                f"Added {len(discovered)} candidate block ID(s) from local mod JAR assets. "
+                "These are suggestions based on blockstate files, not guaranteed runtime registry entries. "
+                "Review the palette before generating."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Mod scan failed", str(exc))
 
     def browse_structure_output(self):
         current = self.structure_output.text().strip()
