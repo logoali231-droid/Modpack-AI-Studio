@@ -29,11 +29,11 @@ class CoreTests(unittest.TestCase):
                 "title": f"Chapter {chapter_index}",
                 "description": "Test chapter",
                 "quests": [{
-                    "title": "Gather iron",
+                    "title": f"Gather iron {quest_index}",
                     "description": "Collect iron ingots",
                     "tasks": [{"item": "minecraft:iron_ingot", "count": 4}],
                     "reward": {"item": "minecraft:bread", "count": 2}
-                }]
+                } for quest_index in range(1, 4)]
             })
         campaign = validate_campaign(campaign)
         files = build_datapack(campaign, "1.16.5")
