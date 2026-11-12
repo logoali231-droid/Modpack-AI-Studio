@@ -4,6 +4,7 @@ from .llm import LLMClient
 from .modrinth import Modrinth
 from .curseforge import CurseForge
 from .quests import build_chapter, validate_campaign
+from .prompts import VERSION_SYSTEM, modpack_system, QUEST_SYSTEM
 
 class ModpackPipeline:
     def __init__(self,cfg,log):
@@ -30,15 +31,7 @@ class ModpackPipeline:
             self.log(f"Using explicitly requested Minecraft version {selected}.")
             return selected, reason
         self.log("AI: choosing a Minecraft release based on your modpack description…")
-        system=(
-            'You are selecting a Minecraft Java Edition version for a modpack. Return ONLY JSON: '
-            '{"minecraft_version":"exact release number","reason":"brief explanation"}. '
-            'Choose a stable RELEASE version, not a snapshot, pre-release, or future version. '
-            'Prioritize the gameplay, progression, and mod ecosystem requested by the user. '
-            'When the prompt names a version or mod with a known version requirement, respect it. '
-            'Otherwise prefer a well-supported release with a broad mod ecosystem, not automatically the newest release. '
-            'Never invent a version number.'
-        )
+        system=VERSION_SYSTEM
         raw=self.llm.text(system,
             "Modpack concept and requirements:\n"+concept+
             "\nChoose the best Minecraft Java release for this specific pack. Return JSON only.")
@@ -62,13 +55,11 @@ class ModpackPipeline:
             version_reason="Selected manually by the user."
         catalog = self.c.get("catalog", "Modrinth")
         self.log(f"1/4 · Designing the modpack for {catalog} on Minecraft {mc}…")
-        if catalog == "CurseForge":
-            identity = '"name":"exact CurseForge project name"'
-        else:
-            identity = '"name":"...","slug":"exact Modrinth project slug"'
-        system=(f'You are a careful Minecraft modpack architect. Return ONLY JSON: {{"mods":[{{{identity},"reason":"..."}}]}}. '
-          'Suggest 15-20 actual mods if the ecosystem supports it. Never fabricate project names or identifiers. Prefer real, maintained projects compatible with the exact game version and loader. Do not list Forge/Fabric/NeoForge/Quilt themselves as projects. Avoid duplicate functionality and obvious conflicts.')
-        raw=self.llm.text(system,f"Minecraft: {mc}\nLoader: {loader}\nCatalog: {catalog}\nConcept: {concept}\nReturn a curated list.")
+        system=modpack_system(catalog)
+        user_brief=(f"FIXED TARGET\\nMinecraft Java: {mc}\\nModloader: {loader}\\nCatalog: {catalog}\\n\\n"
+                    f"USER'S MODPACK BRIEF (preserve its constraints):\\n{concept}\\n\\n"
+                    "Design a cohesive candidate list. Return the required JSON only.")
+        raw=self.llm.text(system,user_brief)
         data=self.llm.json_from(raw); proposed=data.get("mods") if isinstance(data,dict) else data
         if not isinstance(proposed,list) or not proposed: raise ValueError("AI did not return a non-empty mods array.")
         proposed=proposed[:25]; self.log(f"AI proposed {len(proposed)} projects.")
@@ -77,8 +68,9 @@ class ModpackPipeline:
         for entry in proposed:
             if not isinstance(entry,dict): continue
             name=str(entry.get("name") or "").strip()
-            ident=(entry.get("slug") or "").strip() if catalog=="Modrinth" else ""
-            if ident or name: queue.append((ident,name))
+            # Never trust model-generated slugs or IDs. Search the selected catalog by
+            # human-readable name, then resolve the authoritative project ID.
+            if name: queue.append(("",name))
         while queue:
             ident,fallback_name=queue.pop(0)
             if ident and ident in seen: continue
@@ -129,9 +121,7 @@ class ModpackPipeline:
         if self.c.get("quests"):
             self.log("4/4 · Designing a three-chapter quest campaign…")
             names=", ".join(x["name"] for x in installed)
-            qsystem=('Return ONLY JSON matching {"chapters":[{"title":"...","description":"...","quests":[{"title":"...","description":"...","tasks":[{"item":"minecraft:iron_ingot","count":4}],"reward":{"item":"minecraft:bread","count":2}}]}]}. '
-                'Exactly 3 chapters, 3-6 quests per chapter. Use plausible item IDs. Do not return SNBT.')
-            rawq=self.llm.text(qsystem,f"Concept: {concept}\nMinecraft {mc} {loader}. Installed mod files: {names}")
+            rawq=self.llm.text(QUEST_SYSTEM,f"Concept: {concept}\\nMinecraft {mc} {loader}. Installed mods: {names}")
             campaign=validate_campaign(self.llm.json_from(rawq))
             out=mcdir/"config"/"ftbquests"/"quests"/"chapters"; out.mkdir(parents=True,exist_ok=True)
             for i,ch in enumerate(campaign["chapters"],1):
