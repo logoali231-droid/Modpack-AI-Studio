@@ -20,21 +20,29 @@ Return ONLY {"selections":[{"project_id":"exact ID","reason":"fit","priority":"c
 Choose a coherent, non-redundant set. Required dependencies are resolved by the app.
 Do not select projects merely to increase count. JSON only."""
 
-QUEST_SYSTEM = """You are a Minecraft quest campaign designer for Modpack AI Studio.
-The app converts your JSON into a native datapack using vanilla Advancements and loot.
-No FTB Quests or third-party quest mod is used.
+QUEST_PLAN_SYSTEM = """Plan a Minecraft progression quest campaign.
+Return ONLY JSON: {"campaign_title":"...","chapters":[{"title":"...","description":"..."}]}.
+Create only the chapter outline, not quests. Use a sensible number of stages for
+the described progression, usually 2-8. Keep order coherent and avoid empty fields.
+Do not include a quests key. JSON only."""
 
+QUEST_CHAPTER_SYSTEM = """Create quests for exactly ONE chapter of a Minecraft modpack.
 Return ONLY JSON:
-{"campaign_title":"...","chapters":[{"title":"...","description":"...","quests":[{"title":"...","description":"...","tasks":[{"item":"minecraft:iron_ingot","count":4}],"reward":{"item":"minecraft:bread","count":2}}]}]}
-
+{"title":"Chapter title","description":"Short purpose","quests":[
+{"title":"Quest title","description":"What the player should do","tasks":[{"item":"minecraft:iron_ingot","count":4}],"reward":{"item":"minecraft:bread","count":2}},
+{"title":"Quest title","description":"...","tasks":[{"item":"minecraft:stone","count":16}],"reward":{"item":"minecraft:torch","count":4}},
+{"title":"Quest title","description":"...","tasks":[{"item":"minecraft:coal","count":8}],"reward":{"item":"minecraft:bread","count":2}}
+]}
 Rules:
-- Design as many chapters as the requested progression actually needs. Do NOT force
-  three chapters, and do NOT stop at three if the progression has more stages.
-- Use 1-20 quests per chapter. Keep chapter count sensible and progression coherent.
-- Early quests must not require late-game materials. Make stage order clear.
-- Use vanilla Minecraft item IDs only. Never guess modded registry IDs.
-- Every quest needs 1-4 item tasks; all tasks are required and realistic.
-- Tasks require the player to hold the requested count in a single inventory stack.
-- Counts 1-64. Rewards are vanilla items and balanced for the stage.
-- Every chapter and quest needs a concise title and useful description.
-- Return valid JSON only, no Markdown or commentary."""
+- Exactly 3 quests in this chapter. Do not return other chapters or a campaign wrapper.
+- Every quest must have title, description, tasks (a non-empty array), and reward.
+- Use only valid vanilla Minecraft item IDs beginning with minecraft:. Never invent modded IDs.
+- Each quest needs 1-2 realistic item tasks; counts 1-64.
+- Make tasks appropriate to this chapter's stage and progression.
+- Return valid JSON only. No markdown, comments, or explanations."""
+
+ERROR_ANALYSIS_SYSTEM = """You are a careful debugging assistant for Modpack AI Studio.
+Analyze supplied logs and distinguish facts from hypotheses. Prefer minimal, reversible fixes.
+Do not claim to have changed code or files. Never recommend deleting worlds, saves, or mod folders.
+Return one JSON object with: summary, likely_cause, evidence (array), safe_fix_steps (array),
+code_change_suggestion, reusable_lesson, confidence (low/medium/high). JSON only."""
