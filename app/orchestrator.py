@@ -1,14 +1,25 @@
+import datetime
+import json
+import re
+import shutil
+import tempfile
 from pathlib import Path
-import json, shutil, datetime, re, tempfile
 
-from .llm import LLMClient
-from .modrinth import Modrinth
 from .curseforge import CurseForge
-from .quests import build_datapack, pack_format_for, validate_campaign
 from .dependency_verifier import verify_mod_directory
-from .prompts import VERSION_SYSTEM, modpack_system, SELECTION_SYSTEM, QUEST_PLAN_SYSTEM, QUEST_CHAPTER_SYSTEM, ERROR_ANALYSIS_SYSTEM
-from .error_memory import load_confirmed_lessons, record_lesson, confirm_latest_lesson
+from .error_memory import confirm_latest_lesson, load_confirmed_lessons, record_lesson
+from .llm import LLMClient
 from .mod_database import ModDatabase
+from .modrinth import Modrinth
+from .prompts import (
+    ERROR_ANALYSIS_SYSTEM,
+    QUEST_CHAPTER_SYSTEM,
+    QUEST_PLAN_SYSTEM,
+    SELECTION_SYSTEM,
+    VERSION_SYSTEM,
+    modpack_system,
+)
+from .quests import build_datapack, pack_format_for, validate_campaign
 
 
 class ModpackPipeline:
@@ -47,7 +58,7 @@ class ModpackPipeline:
                 details["loaders"] = sorted(set(details.get("loaders") or []) | {str(loader)})
                 self.database.upsert(details)
                 saved += 1
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 failures += 1
                 self.log(f"Could not index {source} project {project_id}: {exc}")
                 # Keep the searchable summary even when the full description endpoint fails.
@@ -64,7 +75,7 @@ class ModpackPipeline:
                         "downloads": hit.get("downloads", 0),
                     })
                     saved += 1
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
         stats = self.database.stats()
         self.log(f"Catalog sync complete: {saved} project(s) saved, {failures} detail error(s).")
@@ -127,7 +138,7 @@ class ModpackPipeline:
         )
         choice = self.llm.json_from(raw)
         if not isinstance(choice, dict):
-            raise ValueError("AI version selection was not a JSON object.")
+            raise ValueError("AI version selection was not a JSON object.")  # noqa: TRY004
         selected = str(choice.get("minecraft_version", "")).strip()
         if not selected:
             raise ValueError("AI did not return minecraft_version.")
@@ -188,7 +199,7 @@ class ModpackPipeline:
             self.log(f"Catalog search {index}/{len(queries)}: {query}")
             try:
                 hits = self.api.search(query, mc, loader) or []
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.log(f"Catalog search failed for '{query}': {exc}")
                 continue
 
@@ -246,7 +257,7 @@ class ModpackPipeline:
             )
             try:
                 item = self.api.resolve(project_id, mc, loader)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.log(f"Candidate rejected: {metadata['name']} ({project_id}): {exc}")
                 continue
             if not item or not item.get("project_id") or not item.get("url"):
@@ -287,7 +298,7 @@ class ModpackPipeline:
                 )
                 try:
                     research_context.extend(research(query, self.log, max_pages=2))
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     self.log(f"Optional browser research unavailable: {exc}")
                     break
 
@@ -304,7 +315,7 @@ class ModpackPipeline:
         data = self.llm.json_from(raw)
         selections = data.get("selections") if isinstance(data, dict) else None
         if not isinstance(selections, list):
-            raise ValueError("AI did not return a selections array for the verified catalog candidates.")
+            raise ValueError("AI did not return a selections array for the verified catalog candidates.")  # noqa: TRY004
 
         selected = {}
         for selection in selections:
@@ -354,7 +365,7 @@ class ModpackPipeline:
         campaign_title = str(plan.get("campaign_title") or "Modpack AI Campaign")[:80]
         for index, outline in enumerate(outlines, 1):
             if not isinstance(outline, dict):
-                raise ValueError(f"Chapter outline {index} is invalid.")
+                raise ValueError(f"Chapter outline {index} is invalid.")  # noqa: TRY004
             title = str(outline.get("title") or f"Chapter {index}")[:80]
             description = str(outline.get("description") or "Progress through this stage.")[:200]
             self.log(f"Quest chapter {index}/{len(outlines)}: generating {title}…")
@@ -560,7 +571,7 @@ class ModpackPipeline:
 
         # Resolve the full required-dependency graph before touching the instance.
         # A pack with a missing required library must never be partially installed.
-        queue = list((project_id, item) for project_id, item in selected.items())
+        queue = list((project_id, item) for project_id, item in selected.items())  # noqa: C400
         resolved = {}
         seen = set()
         unresolved_required = []
@@ -669,7 +680,7 @@ class ModpackPipeline:
             "catalog": catalog,
             "concept": concept,
             "design_summary": summary,
-            "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),  # noqa: UP017
             "selected_project_ids": list(selected.keys()),
             "installed": installed,
             "failed": failed,
