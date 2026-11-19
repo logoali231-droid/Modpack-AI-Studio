@@ -1,0 +1,37 @@
+# spec:
+{
+  "mc": "1.19.4",
+  "loader": "forge",
+  "theme": "primitive survival",
+  "category": "adventure",
+  "grind": "low",
+  "focus": "early game lento e imersivo"
+}
+
+# raw:
+{
+  "progression": [
+    "First Steps",
+    "Find Shelter",
+    "Explore Nether",
+    "Mine Early",
+    "Construct Defenses",
+    "Unlock Huts"
+  ],
+  "design_rules": [
+    "Start with basic tools and armor.",
+    "Focus on slow, immersive gameplay in the early stages.",
+    "Encourage exploration of different biomes from the start.",
+    "Incorporate simple crafting recipes for survival materials.",
+    "Provide options to expand settlements without complex systems."
+  ],
+  "suggested_mods": [
+    YUNG's Better Nether Fortresses,
+    YUNG's Better Dungeons,
+    YUNG's Better Ocean Monuments,
+    YUNG's Better Mineshafts,
+    YUNG's Better Jungle Temples,
+    The Aether,
+    EC Twilight Forest Plugin
+  ]
+}
