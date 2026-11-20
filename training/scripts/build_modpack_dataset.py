@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -10,12 +11,13 @@ import urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = Path.home() / ".local" / "share" / "modpack-ai-studio" / "mods.sqlite3"
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+DB_PATH = DATA_HOME / "modpack-ai-studio" / "mods.sqlite3"
 OUTPUT = PROJECT_ROOT / "training" / "datasets" / "modpack_design.jsonl"
 DEBUG_DIR = PROJECT_ROOT / "training" / "datasets" / "_failed_raw"
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen2.5:3b"
+MODEL = os.environ.get("MODPACK_AI_MODEL", "qwen2.5:3b")
 ATTEMPTS = 3
 TEMPS = [0.5, 0.7, 0.9]
 PICK_LIMIT = 30  # mais opções = mais chance de coerência

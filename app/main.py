@@ -15,6 +15,7 @@ from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
 import keyring
 from .mod_database import ModDatabase
 from .orchestrator import ModpackPipeline
+from .training_panel import DatasetPanel
 
 SERVICE = "modpack-ai-studio"
 
@@ -561,6 +562,9 @@ class MainWindow(QMainWindow):
         self.structure_result.setPlaceholderText("Blueprint summary, block count and output path will appear here.")
         structure_layout.addWidget(self.structure_result, 1)
         tabs.addTab(structure_page, "Structure Designer")
+
+        training_page = DatasetPanel(Path(__file__).resolve().parents[1])
+        tabs.addTab(training_page, "AI Training")
 
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
