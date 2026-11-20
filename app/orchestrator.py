@@ -492,7 +492,12 @@ class ModpackPipeline:
         if not isinstance(result, dict) or not result.get("summary"):
             raise ValueError("The model did not return a usable error diagnosis.")
         saved_path = record_lesson(
-            result, self.c.get("model", "unknown"), self.c.get("provider", "unknown")
+            result, self.c.get("model", "unknown"), self.c.get("provider", "unknown"),
+            error_text=error_text,
+            context={
+                "minecraft_version": self.c.get("version", ""),
+                "loader": self.c.get("loader", ""),
+            },
         )
         result["saved_to"] = str(saved_path)
         result["memory_note"] = (
