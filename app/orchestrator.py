@@ -467,7 +467,25 @@ class ModpackPipeline:
         mc = str(manifest.get("minecraft", "")).strip()
         if mc != self.prism_minecraft_version():
             raise ValueError("Manifest Minecraft version does not match this Prism instance.")
-        pack_format_for(mc)
+        try:
+            pack_format_for(mc)
+        except ValueError as exc:
+            manifest["quests"] = {
+                "status": "skipped_unsupported_version",
+                "minecraft": mc,
+                "error": str(exc),
+            }
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return {
+                "success": True,
+                "quests_failed": False,
+                "message": (
+                    f"Native Advancement quests are not supported for Minecraft {mc}. "
+                    "The existing modpack and installed mods were left unchanged."
+                ),
+            }
         installed_names = ", ".join(item.get("name", item.get("file", "")) for item in manifest.get("installed", []))
         status = self._write_quest_datapack(
             mc, manifest.get("concept", ""), installed_names, mcdir,
