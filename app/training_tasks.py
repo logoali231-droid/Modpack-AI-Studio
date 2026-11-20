@@ -16,7 +16,7 @@ TASKS = {
 }
 
 
-def run_training_task(task, log, model="qwen2.5:3b", count=100, fresh=False):
+def run_training_task(task, log, model="qwen2.5:3b", ollama_url="http://localhost:11434", count=100, fresh=False):
     if task not in TASKS:
         raise ValueError(f"Unknown training task: {task}")
     script, args = TASKS[task]
@@ -28,9 +28,7 @@ def run_training_task(task, log, model="qwen2.5:3b", count=100, fresh=False):
 
     env = os.environ.copy()
     env["MODPACK_AI_MODEL"] = str(model or "qwen2.5:3b")
-    env["MODPACK_AI_OLLAMA_URL"] = env.get(
-        "MODPACK_AI_OLLAMA_URL", "http://localhost:11434"
-    )
+    env["MODPACK_AI_OLLAMA_URL"] = str(ollama_url or "http://localhost:11434").rstrip("/")
     log("Running: " + " ".join(command))
     process = subprocess.Popen(
         command, cwd=str(ROOT), env=env, stdout=subprocess.PIPE,
