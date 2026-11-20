@@ -10,15 +10,15 @@ import urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH      = Path.home() / ".local" / "share" / "modpack-ai-studio" / "mods.sqlite3"
-OUTPUT       = PROJECT_ROOT / "training" / "datasets" / "modpack_design.jsonl"
-DEBUG_DIR    = PROJECT_ROOT / "training" / "datasets" / "_failed_raw"
+DB_PATH = Path.home() / ".local" / "share" / "modpack-ai-studio" / "mods.sqlite3"
+OUTPUT = PROJECT_ROOT / "training" / "datasets" / "modpack_design.jsonl"
+DEBUG_DIR = PROJECT_ROOT / "training" / "datasets" / "_failed_raw"
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL      = "qwen2.5:3b"
-ATTEMPTS   = 3
-TEMPS      = [0.5, 0.7, 0.9]
-PICK_LIMIT = 30   # mais opções = mais chance de coerência
+MODEL = "qwen2.5:3b"
+ATTEMPTS = 3
+TEMPS = [0.5, 0.7, 0.9]
+PICK_LIMIT = 30  # mais opções = mais chance de coerência
 
 # Few-shot: 1 exemplo curto ancora o formato e a qualidade.
 SYSTEM_PROMPT = """You are a Minecraft modpack design specialist.
@@ -67,44 +67,39 @@ Return only the JSON. No markdown, no trailing commas, no text outside."""
 
 # Categorias proibidas por tema (mods com QUALQUER uma delas são descartados)
 DEFAULT_FORBID = {
-    "primitive survival":         ["technology", "storage", "transportation", "management", "magic"],
-    "technology and automation":  ["magic", "adventure"],
-    "exploration and survival":   ["management"],
-    "low-grind progression":      [],
-    "multiblock industry":        ["magic", "adventure", "decoration"],
-    "hardcore survival":          ["technology", "storage", "transportation", "magic", "decoration"],
-    "mixed gameplay":             [],
+    "primitive survival": [
+        "technology",
+        "storage",
+        "transportation",
+        "management",
+        "magic",
+    ],
+    "technology and automation": ["magic", "adventure"],
+    "exploration and survival": ["management"],
+    "low-grind progression": [],
+    "multiblock industry": ["magic", "adventure", "decoration"],
+    "hardcore survival": [
+        "technology",
+        "storage",
+        "transportation",
+        "magic",
+        "decoration",
+    ],
+    "mixed gameplay": [],
 }
 
-SPECS = [
-    # --- Primitive survival (20) ---
-    {"mc":"1.20.1","loader":"forge","theme":"primitive survival","category":"adventure","grind":"low","focus":"coleta manual e ferramentas de pedra"},
-    {"mc":"1.20.1","loader":"forge","theme":"primitive survival","category":"worldgen","grind":"low","focus":"sobrevivência sem eletricidade"},
-    {"mc":"1.19.4","loader":"forge","theme":"primitive survival","category":"adventure","grind":"low","focus":"early game lento e imersivo"},
-    {"mc":"1.20.1","loader":"fabric","theme":"primitive survival","category":"adventure","grind":"low","focus":"clima e comida escassos"},
-    # --- Technology & automation (20) ---
-    {"mc":"1.20.1","loader":"forge","theme":"technology and automation","category":"technology","grind":"medium","focus":"Create + Mekanism progressão"},
-    {"mc":"1.20.1","loader":"forge","theme":"technology and automation","category":"technology","grind":"medium","focus":"automação desde o early game"},
-    {"mc":"1.20.1","loader":"forge","theme":"technology and automation","category":"storage","grind":"low","focus":"AE2 cedo, sem grind"},
-    {"mc":"1.21.1","loader":"neoforge","theme":"technology and automation","category":"technology","grind":"medium","focus":"integração multibloco"},
-    # --- Exploration & survival (15) ---
-    {"mc":"1.20.1","loader":"forge","theme":"exploration and survival","category":"adventure","grind":"medium","focus":"dimensões e biomas custom"},
-    {"mc":"1.20.1","loader":"forge","theme":"exploration and survival","category":"worldgen","grind":"medium","focus":"exploração recompensadora"},
-    {"mc":"1.20.1","loader":"forge","theme":"exploration and survival","category":"magic","grind":"medium","focus":"magia + exploração"},
-    # --- Low-grind progression (15) ---
-    {"mc":"1.20.1","loader":"forge","theme":"low-grind progression","category":"utility","grind":"low","focus":"zero grind repetitivo"},
-    {"mc":"1.20.1","loader":"forge","theme":"low-grind progression","category":"equipment","grind":"low","focus":"progressão rápida mas significativa"},
-    # --- Multiblock industry (10) ---
-    {"mc":"1.20.1","loader":"forge","theme":"multiblock industry","category":"technology","grind":"high","focus":"fábricas multibloco"},
-    {"mc":"1.20.1","loader":"forge","theme":"multiblock industry","category":"technology","grind":"high","focus":"cadeias de produção longas"},
-    # --- Hardcore survival (10) ---
-    {"mc":"1.20.1","loader":"forge","theme":"hardcore survival","category":"adventure","grind":"high","focus":"morte permanente, sem hand-holding"},
-    {"mc":"1.20.1","loader":"forge","theme":"hardcore survival","category":"worldgen","grind":"high","focus":"mobs perigosos e noites longas"},
-    # --- Mixed gameplay (10) ---
-    {"mc":"1.20.1","loader":"forge","theme":"mixed gameplay","category":"technology","grind":"medium","focus":"tech + magia + exploração"},
-    {"mc":"1.21.1","loader":"neoforge","theme":"mixed gameplay","category":"magic","grind":"medium","focus":"progressão aberta em várias frentes"},
-]
+# ========== SPECS (carregado do JSON gerado por generate_specs.py) ==========
+SPECS_FILE = PROJECT_ROOT / "training" / "datasets" / "specs_generated.json"
 
+if not SPECS_FILE.exists():
+    raise SystemExit(
+        f"Arquivo de specs não encontrado: {SPECS_FILE}\n"
+        f"Rode primeiro:  python training/scripts/generate_specs.py --count 100"
+    )
+
+SPECS = json.loads(SPECS_FILE.read_text(encoding="utf-8"))
+print(f"[specs] Carregados {len(SPECS)} specs de {SPECS_FILE.name}")
+# ============================================================================
 
 
 def normalize_name(name: str) -> str:
@@ -135,14 +130,24 @@ def extract_json_object(raw: str) -> dict:
     depth, in_string, escape, end = 0, False, False, -1
     for i in range(start, len(raw)):
         ch = raw[i]
-        if escape: escape = False; continue
-        if ch == "\\": escape = True; continue
-        if ch == '"': in_string = not in_string; continue
-        if in_string: continue
-        if ch == "{": depth += 1
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
         elif ch == "}":
             depth -= 1
-            if depth == 0: end = i + 1; break
+            if depth == 0:
+                end = i + 1
+                break
     if end == -1:
         raise ValueError(f"chaves não balanceadas")
     candidate = raw[start:end]
@@ -158,7 +163,9 @@ def extract_json_object(raw: str) -> dict:
 
 def call_ollama(system: str, user: str, temperature: float) -> str:
     payload = {
-        "model": MODEL, "system": system, "prompt": user,
+        "model": MODEL,
+        "system": system,
+        "prompt": user,
         "stream": False,
         "options": {"temperature": temperature},
     }
@@ -173,7 +180,6 @@ def call_ollama(system: str, user: str, temperature: float) -> str:
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
         raise RuntimeError(f"HTTP {e.code} em /api/generate: {body}") from None
-    
 
 
 def fetch_mods_for_spec(conn, spec, limit=15):
@@ -186,14 +192,17 @@ def fetch_mods_for_spec(conn, spec, limit=15):
     ).fetchall()
     picked = []
     for name, cats_json, downloads in rows:
-        try: cats = json.loads(cats_json or "[]")
-        except json.JSONDecodeError: cats = []
+        try:
+            cats = json.loads(cats_json or "[]")
+        except json.JSONDecodeError:
+            cats = []
         if spec["category"] not in cats:
             continue
         if any(f in cats for f in forbidden):
             continue
         picked.append({"name": name, "downloads": downloads})
-        if len(picked) >= limit: break
+        if len(picked) >= limit:
+            break
     return picked
 
 
@@ -213,7 +222,7 @@ def build_user_prompt(spec, mods):
 def validate_response(raw, allowed_mods_list):
     obj = extract_json_object(raw)
     allowed_norm = {normalize_name(m["name"]) for m in allowed_mods_list}
-    allowed_raw  = {m["name"] for m in allowed_mods_list}
+    allowed_raw = {m["name"] for m in allowed_mods_list}
 
     # 1. Keys e tipos
     for key in ("progression", "design_rules", "suggested_mods"):
@@ -245,7 +254,7 @@ def validate_response(raw, allowed_mods_list):
 
     if len(obj["suggested_mods"]) < 3:
         raise ValueError(f"só {len(obj['suggested_mods'])} mods sugeridos (mín 3)")
-    
+
     if len(obj["suggested_mods"]) > 6:
         raise ValueError(f"{len(obj['suggested_mods'])} mods (máx 6)")
 
@@ -258,10 +267,12 @@ def prompt_hash(user_prompt: str) -> str:
 
 def load_existing_hashes() -> set:
     hashes = set()
-    if not OUTPUT.exists(): return hashes
+    if not OUTPUT.exists():
+        return hashes
     for line in OUTPUT.open("r", encoding="utf-8"):
         line = line.strip()
-        if not line: continue
+        if not line:
+            continue
         try:
             obj = json.loads(line)
             for msg in obj.get("messages", []):
@@ -300,7 +311,9 @@ def main():
             mods = fetch_mods_for_spec(conn, spec)
             if len(mods) < 3:
                 skipped_mods += 1
-                print(f"[{i}/{len(SPECS)}] {spec['theme']} → SKIP (só {len(mods)} mods)")
+                print(
+                    f"[{i}/{len(SPECS)}] {spec['theme']} → SKIP (só {len(mods)} mods)"
+                )
                 continue
 
             user = build_user_prompt(spec, mods)
@@ -308,8 +321,11 @@ def main():
                 resumed += 1
                 continue
 
-            print(f"[{i}/{len(SPECS)}] {spec['theme']} ({len(mods)}) … ",
-                  end="", flush=True)
+            print(
+                f"[{i}/{len(SPECS)}] {spec['theme']} ({len(mods)}) … ",
+                end="",
+                flush=True,
+            )
 
             last_err, last_raw, success = None, None, False
             for attempt in range(ATTEMPTS):
@@ -317,28 +333,36 @@ def main():
                     raw = call_ollama(SYSTEM_PROMPT, user, TEMPS[attempt])
                     last_raw = raw
                     obj = validate_response(raw, mods)
-                    example = {"messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user",   "content": user},
-                        {"role": "assistant",
-                         "content": json.dumps(obj, ensure_ascii=False)},
-                    ]}
+                    example = {
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user},
+                            {
+                                "role": "assistant",
+                                "content": json.dumps(obj, ensure_ascii=False),
+                            },
+                        ]
+                    }
                     f.write(json.dumps(example, ensure_ascii=False) + "\n")
                     f.flush()
-                    ok += 1; success = True
-                    print("OK" if attempt == 0 else f"OK (tent {attempt+1})")
+                    ok += 1
+                    success = True
+                    print("OK" if attempt == 0 else f"OK (tent {attempt + 1})")
                     break
                 except Exception as exc:
                     last_err = exc
 
             if not success:
                 fail += 1
-                if last_raw: dump_failed_raw(i, spec, last_raw)
+                if last_raw:
+                    dump_failed_raw(i, spec, last_raw)
                 print(f"FALHOU ({last_err})")
 
     conn.close()
     total = sum(1 for _ in OUTPUT.open("r", encoding="utf-8")) if OUTPUT.exists() else 0
-    print(f"\nNovos: {ok} | Falhas: {fail} | Skip: {skipped_mods} | Já existiam: {resumed}")
+    print(
+        f"\nNovos: {ok} | Falhas: {fail} | Skip: {skipped_mods} | Já existiam: {resumed}"
+    )
     print(f"Total no arquivo: {total}")
 
 

@@ -1,0 +1,33 @@
+# spec:
+{
+  "mc": "1.18.2",
+  "loader": "forge",
+  "theme": "technology and automation",
+  "category": "technology",
+  "grind": "low",
+  "focus": "Create-centered with Create: Steam 'n' Rails as side path"
+}
+
+# raw:
+{
+  "progression": [
+    "Collect resources and craft basic items",
+    "Assemble a simple mechanical contraption with Create: Connected",
+    "Mine ores for energy and upgrade your machinery",
+    "Craft advanced machinery using applied energies and enhance efficiency",
+    "Implement a small steam system with Steam 'n' Rails to power additional machines"
+  ],
+  "design_rules": [
+    "Encourage side exploration like Create: Steam 'n' Rails without hindering main progression",
+    "Favor simplicity in mechanics over complexity for better early-game experiences",
+    "Keep the environment varied and dynamic to maintain interest, even with low grind expectations"
+  ],
+  "suggested_mods": [
+    "Create",
+    "Create Crafts & Additions",
+    "Applied Energistics 2",
+    "Immersive Engineering",
+    "Create Ore Excavation",
+    "Refined Storage"
+  ]
+}

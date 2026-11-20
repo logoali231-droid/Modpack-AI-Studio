@@ -1,0 +1,28 @@
+# spec:
+{
+  "mc": "1.20.1",
+  "loader": "neoforge",
+  "theme": "primitive survival",
+  "category": "food",
+  "grind": "low",
+  "focus": "adventure-only, Farmer's Delight primary"
+}
+
+# raw:
+{
+  "progression": [
+    "Plant seeds and gather natural food sources",
+    "Build a simple shelter using scavenged materials",
+    "Craft wooden tools to mine for resources"
+  ],
+  "design_rules": [
+    "Focus on sustainable and efficient farming practices",
+    "Balance exploration with resource gathering",
+    "Include village interaction for modded villagers"
+  ],
+  "suggested_mods": [
+    "Farmer's Delight",
+    "Veggies Delight",
+    "Pam's HarvestCraft 2: Food Core"
+  ]
+}

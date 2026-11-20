@@ -1,0 +1,35 @@
+# spec:
+{
+  "mc": "1.19.2",
+  "loader": "forge",
+  "theme": "low-grind progression",
+  "category": "utility",
+  "grind": "low",
+  "focus": "Just Enough Items (JEI) as central tree, no shortcuts"
+}
+
+# raw:
+{
+  "progression": [
+    "Mine ores and craft basic tools",
+    "Use JEI to identify items and recipes",
+    "Farm crops, craft food, and build shelter",
+    "Craft iron tools, mine deeper for ore",
+    "Collect diamonds, create a diamond pickaxe"
+  ],
+  "design_rules": [
+    "Maintain a smooth progression without too much grinding",
+    "Utilize JEI for item identification and recipe finding",
+    "Keep mining and farming early-game to ensure utility",
+    "Focus on building an interior using Create mods",
+    "Encourage the use of materials like wood from low-tier ores"
+  ],
+  "suggested_mods": [
+    "Jade 🔍",
+    "Create",
+    "Create: Design n' Decor",
+    "Applied Energistics 2",
+    "Every Compat (Wood Good)",
+    "Create: Dreams & Desires"
+  ]
+}

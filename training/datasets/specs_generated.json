@@ -1,0 +1,802 @@
+[
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "no worldgen content, only adventure via YUNG's Better Nether Fortresses"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "Create: Steam 'n' Rails early → Create Crafts & Additions endgame"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "worldgen",
+    "grind": "medium",
+    "focus": "primitive start, YUNG's API as breakthrough"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "utility",
+    "grind": "low",
+    "focus": "primitive start, Just Enough Items (JEI) as breakthrough"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "technology",
+    "grind": "high",
+    "focus": "Create: Steam 'n' Rails early → Create Crafts & Additions endgame"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "mobs",
+    "grind": "high",
+    "focus": "YUNG's Cave Biomes-centered with Epic Fight as side path"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses early → YUNG's Better Dungeons endgame"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "adventure-only, Farmer's Delight primary"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "storage",
+    "grind": "medium",
+    "focus": "primitive start, Create Crafts & Additions as breakthrough"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "exploration and survival",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "no worldgen content, only adventure via Ice and Fire"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "low-grind progression",
+    "category": "utility",
+    "grind": "low",
+    "focus": "utility-only, Just Enough Items (JEI) primary"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "Create Crafts & Additions + Applied Energistics 2 progression"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "adventure-only, YUNG's API primary"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "neoforge",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "Ice and Fire early → Twilight's Flavor & Delight endgame"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "no worldgen content, only adventure via Farmer's Delight"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "storage",
+    "grind": "medium",
+    "focus": "Create Crafts & Additions as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "Twilight's Flavor & Delight + Ars Ocultas + adventure synergy"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "equipment",
+    "grind": "low",
+    "focus": "utility-only, Curios API primary"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "technology",
+    "grind": "high",
+    "focus": "Create Crafts & Additions as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "YUNG's API + The Aether + adventure synergy"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "technology",
+    "grind": "medium",
+    "focus": "technology-only, Create primary"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "YUNG's Better Nether Fortresses at endgame, adventure grounded early"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "storage",
+    "grind": "low",
+    "focus": "Create Crafts & Additions early → Applied Energistics 2 endgame"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "exploration and survival",
+    "category": "worldgen",
+    "grind": "medium",
+    "focus": "primitive start, YUNG's API as breakthrough"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "avoid equipment entirely, Jaden's Nether Expansion as anchor"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "slow technology start, Create Crafts & Additions unlocks mid-game"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "hardcore survival",
+    "category": "adventure",
+    "grind": "high",
+    "focus": "JourneyMap at endgame, adventure grounded early"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "neoforge",
+    "theme": "mixed gameplay",
+    "category": "technology",
+    "grind": "medium",
+    "focus": "no magic content, only technology via Create"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "worldgen",
+    "grind": "low",
+    "focus": "YUNG's API at endgame, adventure grounded early"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "Create: Steam 'n' Rails-centered with Create Crafts & Additions as side path"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "avoid worldgen entirely, YUNG's Better Nether Fortresses as anchor"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "utility",
+    "grind": "low",
+    "focus": "Just Enough Items (JEI) as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "technology",
+    "grind": "high",
+    "focus": "avoid storage entirely, Create: Steam 'n' Rails as anchor"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "mobs",
+    "grind": "high",
+    "focus": "Epic Fight + Deep Aether + adventure synergy"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "tight pacing, YUNG's Better Nether Fortresses core"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "worldgen",
+    "grind": "low",
+    "focus": "YUNG's API + YUNG's Better Nether Fortresses progression"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "no storage content, only technology via Create: Steam 'n' Rails"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses + YUNG's Better Dungeons + adventure synergy"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "low-grind progression",
+    "category": "utility",
+    "grind": "low",
+    "focus": "Just Enough Items (JEI) as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "multiblock industry",
+    "category": "technology",
+    "grind": "high",
+    "focus": "Create: Steam 'n' Rails + Create Crafts & Additions + technology synergy"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "hardcore survival",
+    "category": "adventure",
+    "grind": "high",
+    "focus": "primitive start, JourneyMap as breakthrough"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "neoforge",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "Ice and Fire + Twilight's Flavor & Delight progression"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "YUNG's Better Nether Fortresses + YUNG's Better End Island progression"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "technology",
+    "grind": "low",
+    "focus": "Create-centered with Create: Steam 'n' Rails as side path"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "adventure-only, YUNG's Better Nether Fortresses primary"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "Blue Skies early → TerraFirmaCraft endgame"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "avoid storage entirely, Create Crafts & Additions as anchor"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "mobs",
+    "grind": "high",
+    "focus": "YUNG's Cave Biomes-centered with Epic Fight as side path"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "tight pacing, Ice and Fire core"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "primitive survival",
+    "category": "worldgen",
+    "grind": "low",
+    "focus": "no worldgen content, only adventure via YUNG's API"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "technology and automation",
+    "category": "storage",
+    "grind": "low",
+    "focus": "Create Crafts & Additions early → Applied Energistics 2 endgame"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "Jaden's Nether Expansion core, Create: Dragons Plus optional"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "Create Crafts & Additions + Applied Energistics 2 progression"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "YUNG's API early → The Aether endgame"
+  },
+  {
+    "mc": "1.20.1",
+    "loader": "fabric",
+    "theme": "mixed gameplay",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "avoid magic entirely, YUNG's Better Nether Fortresses as anchor"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "no worldgen content, only adventure via Pam's HarvestCraft 2: Food Core"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "technology",
+    "grind": "medium",
+    "focus": "no storage content, only technology via Applied Energistics 2"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses-centered with YUNG's Better Dungeons as side path"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "equipment",
+    "grind": "low",
+    "focus": "Curios API + The Aether progression"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "Applied Energistics 2 + Mekanism + technology synergy"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "adventure",
+    "grind": "high",
+    "focus": "no worldgen content, only adventure via JourneyMap"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "primitive start, Botania Seeds as breakthrough"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "no worldgen content, only adventure via YUNG's Better Nether Fortresses"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "technology",
+    "grind": "low",
+    "focus": "Create core, Create: Steam 'n' Rails optional"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses core, YUNG's Better End Island optional"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "low-grind progression",
+    "category": "utility",
+    "grind": "low",
+    "focus": "Just Enough Items (JEI) as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "slow technology start, Create Crafts & Additions unlocks mid-game"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "hardcore survival",
+    "category": "adventure",
+    "grind": "high",
+    "focus": "JourneyMap + Epic Fight - Sword Soaring progression"
+  },
+  {
+    "mc": "1.18.2",
+    "loader": "neoforge",
+    "theme": "mixed gameplay",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "adventure-only, Chef's Delight - Farmer's Delight Villagers primary"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "technology and automation",
+    "category": "storage",
+    "grind": "medium",
+    "focus": "Create Crafts & Additions + Applied Energistics 2 progression"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses-centered with YUNG's Better Dungeons as side path"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "Jaden's Nether Expansion early → Create: Dragons Plus endgame"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "multiblock industry",
+    "category": "technology",
+    "grind": "high",
+    "focus": "primitive start, Create Crafts & Additions as breakthrough"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "slow adventure start, YUNG's API unlocks mid-game"
+  },
+  {
+    "mc": "1.21.1",
+    "loader": "fabric",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "tight pacing, Ice And Fire Smithing core"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "adventure-only, YUNG's Better Nether Fortresses primary"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "Refined Storage + Aether Addon: Protect Your Moa progression"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "exploration and survival",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "YUNG's Better Nether Fortresses + YUNG's Better Dungeons + adventure synergy"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "no equipment content, only utility via Blue Skies"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "Applied Energistics 2 as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "YUNG's API as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.20.4",
+    "loader": "neoforge",
+    "theme": "mixed gameplay",
+    "category": "technology",
+    "grind": "medium",
+    "focus": "Applied Energistics 2 + Mekanism progression"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "primitive survival",
+    "category": "adventure",
+    "grind": "low",
+    "focus": "adventure-only, YUNG's Better Nether Fortresses primary"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "technology and automation",
+    "category": "technology",
+    "grind": "medium",
+    "focus": "slow technology start, Create: Steam 'n' Rails unlocks mid-game"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "exploration and survival",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "Botania-centered with Ice And Fire Smithing as side path"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "low-grind progression",
+    "category": "game-mechanics",
+    "grind": "low",
+    "focus": "Aether Addon: Enhanced Extinguishing core, Cobblemon Quests optional"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "primitive start, Create Crafts & Additions as breakthrough"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "tight pacing, YUNG's API core"
+  },
+  {
+    "mc": "1.19.2",
+    "loader": "fabric",
+    "theme": "mixed gameplay",
+    "category": "adventure",
+    "grind": "medium",
+    "focus": "slow technology start, YUNG's Better Nether Fortresses unlocks mid-game"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "Farmer's Delight as central tree, no shortcuts"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "AE2 Import Export Card + Universal Grid progression"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "exploration and survival",
+    "category": "worldgen",
+    "grind": "medium",
+    "focus": "YUNG's API-centered with YUNG's Better Nether Fortresses as side path"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "low-grind progression",
+    "category": "equipment",
+    "grind": "low",
+    "focus": "Farmer's Delight at endgame, utility grounded early"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "multiblock industry",
+    "category": "storage",
+    "grind": "high",
+    "focus": "no storage content, only technology via Applied Energistics 2"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "hardcore survival",
+    "category": "worldgen",
+    "grind": "high",
+    "focus": "YUNG's API at endgame, adventure grounded early"
+  },
+  {
+    "mc": "1.21",
+    "loader": "forge",
+    "theme": "mixed gameplay",
+    "category": "magic",
+    "grind": "medium",
+    "focus": "Ars Ocultas-centered with Ars Énergistique as side path"
+  },
+  {
+    "mc": "1.21",
+    "loader": "neoforge",
+    "theme": "primitive survival",
+    "category": "food",
+    "grind": "low",
+    "focus": "Farmer's Delight + Chef's Delight - Farmer's Delight Villagers progression"
+  },
+  {
+    "mc": "1.21",
+    "loader": "neoforge",
+    "theme": "technology and automation",
+    "category": "transportation",
+    "grind": "medium",
+    "focus": "technology-only, AE2 Import Export Card primary"
+  }
+]
