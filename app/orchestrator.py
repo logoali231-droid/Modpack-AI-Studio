@@ -602,46 +602,80 @@ class ModpackPipeline:
         verified = self.discover_candidates(requirements, mc, loader)
         selected = self.select_candidates(verified, concept, mc, loader, catalog)
 
-        # Resolve the full required-dependency graph before touching the instance.
-        # A pack with a missing required library must never be partially installed.
-        queue = list((project_id, item) for project_id, item in selected.items())  # noqa: C400
+        # Resolve dependencies independently for each selected root project.
+        # If one mod requires an unavailable library, skip that mod rather than
+        # cancelling an otherwise valid pack or installing a broken dependency set.
         resolved = {}
-        seen = set()
-        unresolved_required = []
-        while queue:
-            project_id, item = queue.pop(0)
-            project_id = str(project_id)
-            if project_id in seen:
-                continue
-            seen.add(project_id)
-            if item is None:
-                try:
-                    item = self.api.resolve(project_id, mc, loader)
-                except Exception as exc:
-                    self.log(f"Could not resolve required dependency {project_id}: {exc}")
-                    unresolved_required.append(project_id)
+        skipped_roots = []
+        for root_id, root_item in selected.items():
+            queue = [(str(root_id), root_item)]
+            root_resolved = {}
+            seen_for_root = set()
+            missing_dependencies = []
+            while queue:
+                project_id, item = queue.pop(0)
+                project_id = str(project_id)
+                if project_id in seen_for_root:
                     continue
-            if not item:
-                self.log(f"Required dependency has no compatible file: {project_id}")
-                unresolved_required.append(project_id)
-                continue
-            resolved[str(item["project_id"])] = item
-            for dependency in item.get("dependencies", []):
-                if dependency.get("dependency_type") == "required":
-                    dependency_id = dependency.get("project_id")
-                    if dependency_id and str(dependency_id) not in seen:
-                        queue.append((str(dependency_id), None))
+                seen_for_root.add(project_id)
+                if item is None:
+                    try:
+                        item = self.api.resolve(project_id, mc, loader)
+                    except Exception as exc:
+                        self.log(f"Could not resolve required dependency {project_id}: {exc}")
+                        missing_dependencies.append(project_id)
+                        continue
+                if not item:
+                    self.log(f"Required dependency has no compatible file: {project_id}")
+                    missing_dependencies.append(project_id)
+                    continue
+                root_resolved[str(item["project_id"])] = item
+                for dependency in item.get("dependencies", []):
+                    if dependency.get("dependency_type") == "required":
+                        dependency_id = dependency.get("project_id")
+                        if dependency_id and str(dependency_id) not in seen_for_root:
+                            queue.append((str(dependency_id), None))
 
-        if unresolved_required:
-            missing = ", ".join(sorted(set(unresolved_required)))
-            raise RuntimeError(
-                "Installation cancelled before downloading: required dependencies "
-                f"have no compatible {mc}/{loader} file: {missing}. "
-                "Choose another Minecraft release or remove the mod that requires them."
+            if missing_dependencies:
+                root_name = str(root_item.get("name") or root_id)
+                labels = []
+                for dependency_id in sorted(set(missing_dependencies)):
+                    label = dependency_id
+                    try:
+                        details = self.api.details(dependency_id)
+                        label = f"{details.get('name') or dependency_id} ({dependency_id})"
+                    except Exception:
+                        pass
+                    labels.append(label)
+                skipped_roots.append({
+                    "project_id": str(root_id),
+                    "name": root_name,
+                    "missing_dependencies": sorted(set(missing_dependencies)),
+                })
+                self.log(
+                    f"SKIPPED MOD · {root_name} requires unavailable dependency: "
+                    f"{', '.join(labels)}. It will not be installed for {mc}/{loader}."
+                )
+                continue
+
+            resolved.update(root_resolved)
+
+        if skipped_roots:
+            self.log(
+                f"Compatibility adjustment: skipped {len(skipped_roots)} selected mod(s) "
+                "whose required dependency chain has no compatible file. "
+                "The remaining compatible mods will continue."
             )
         if not resolved:
-            raise RuntimeError(f"No compatible {catalog} files found for Minecraft {mc}/{loader}.")
-        self.log(f"Selected {len(selected)} projects; {len(resolved)} including required dependencies.")
+            details = "; ".join(
+                f"{item['name']} -> {', '.join(item['missing_dependencies'])}"
+                for item in skipped_roots
+            )
+            raise RuntimeError(
+                f"No selected mod has a complete required-dependency chain for {mc}/{loader}. "
+                f"Nothing was downloaded. Incompatible selections: {details or 'none'}."
+            )
+        self.log(f"Selected {len(selected)} projects; {len(resolved)} compatible projects including required dependencies; {len(skipped_roots)} incompatible selections skipped.")
         self.progress(50, 100, f"{len(resolved)} compatible projects verified. Preparing installation…")
 
         mcdir = self.minecraft_dir()
