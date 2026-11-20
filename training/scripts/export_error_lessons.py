@@ -15,15 +15,17 @@ SYSTEM = (
 
 
 def main():
-    lessons = [x for x in _read().get("lessons", []) if x.get("status") == "confirmed"]
+    lessons = [x for x in _read().get("lessons", []) if x.get("status") == "confirmed" and x.get("error_text")]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("w", encoding="utf-8") as handle:
         for item in lessons:
             diagnosis = item.get("diagnosis", {})
             user = (
-                "Diagnose this confirmed error case.\n"
-                + "Original log/context was not retained by older app versions.\n"
-                + "Model/provider: " + str(item.get("provider")) + "/" + str(item.get("model"))
+                "Diagnose this confirmed Minecraft/modpack error case.\n"
+                + "Context: " + json.dumps(item.get("context", {}), ensure_ascii=False) + "\n"
+                + "Original error log:\n" + str(item.get("error_text", "")) + "\n"
+                + "Model/provider that proposed the original diagnosis: "
+                + str(item.get("provider")) + "/" + str(item.get("model"))
             )
             answer = json.dumps(diagnosis, ensure_ascii=False)
             row = {"messages": [
@@ -34,7 +36,7 @@ def main():
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     print(f"Exported {len(lessons)} confirmed lesson(s) to {OUT}")
     if not lessons:
-        print("No confirmed lessons yet. Analyze an error and confirm its lesson in the GUI first.")
+        print("No eligible lessons yet. Analyze an error after updating the app, then confirm it in the GUI. Older lessons without original logs are skipped.")
 
 
 if __name__ == "__main__":
