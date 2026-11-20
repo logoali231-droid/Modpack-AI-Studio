@@ -715,6 +715,19 @@ class ModpackPipeline:
                     f"{type(exc).__name__}: {exc}"
                 )
 
+        ftb_quest_status = {"status": "disabled"}
+        if self.c.get("ftb_quest_guide"):
+            try:
+                from .ftb_quest_guide import generate_ftb_quest_guide
+                self.progress(0, 0, "Designing FTB Quests editor guide…")
+                ftb_quest_status = generate_ftb_quest_guide(
+                    self.llm, mcdir / "modpack-ai-manifest.json", mcdir, self.log
+                )
+            except Exception as exc:
+                ftb_quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+                self.log(f"WARNING · Modpack installed, but FTB quest guide generation failed: {exc}")
+
+        manifest["ftb_quest_design"] = ftb_quest_status
         manifest["quests"] = quest_status
         (mcdir / "modpack-ai-manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
