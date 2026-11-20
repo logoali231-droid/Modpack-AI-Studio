@@ -123,36 +123,59 @@ def generate_ftb_quest_guide(llm, manifest_path, output_dir, log=print):
         + "\n".join(f"- {name}" for name in mod_names)
     )
     plan_system = (
-        "You are a Minecraft FTB Quests campaign designer. Design a coherent campaign "
-        "for the supplied installed modpack. Return ONLY JSON with campaign_title and "
-        "chapters. Each chapter has title, description and icon using a plausible "
-        "namespace:path ID. Create 2-8 chapters. Keep progression meaningful, avoid "
-        "repetitive collection grind, and respect the supplied modpack concept."
+        "You are a senior Minecraft 1.12.2 Forge technology modpack quest designer. "
+        "Return ONLY JSON: campaign_title and chapters [{title,description,icon}]. "
+        "Create 4-6 chapters with a clear technology ladder. Use the user's concept. "
+        "Plan around the actual purposes of installed mods, but the supplied manifest "
+        "contains MOD NAMES ONLY. Do not claim knowledge of their recipes, machines, "
+        "items, energy systems or mechanics unless the name itself makes that certain. "
+        "Do not invent mod features. Prefer a conservative progression and reserve "
+        "uncertain mod-specific content for a clearly labelled verification step. "
+        "No magic progression when the concept says technology. Easy early automation, "
+        "low grind, no filler chapters."
     )
     plan = llm.json_from(llm.text(plan_system, context))
     outlines = plan.get("chapters") if isinstance(plan, dict) else None
     if not isinstance(outlines, list) or not 1 <= len(outlines) <= 12:
         raise ValueError("AI did not return a valid chapter outline.")
     chapter_system = (
-        "You create one chapter for an FTB Quests editor guide. Return ONLY JSON with "
-        "chapter {title, description, icon} and quests array. Each quest has title, "
-        "description, icon, task {type, target, count optional}, reward {type, target "
-        "optional, amount}, depends_on (previous quest titles), and ftb_tip. Use 3-8 "
-        "quests. Allowed task types: item, kill, dimension, advancement. Allowed reward "
-        "types: item, xp. IDs must be namespace:path. The installed mod list contains "
-        "names only, not registry data: never present a guessed modded ID as verified. "
-        "Prefer familiar vanilla IDs when uncertain. Keep the first quest dependency "
-        "list empty; each later quest must depend on at least one earlier quest. Respect "
-        "Minecraft progression. Do not mention mod names in quest descriptions or tips."
+        "You create practical FTB Quests editor instructions for Minecraft 1.12.2 Forge. "
+        "Return ONLY JSON with chapter {title,description,icon} and quests array. "
+        "Each quest MUST contain title,description,icon,task {type,target,count optional}, "
+        "reward {type,target optional,amount},depends_on (titles of earlier quests in "
+        "this chapter),ftb_tip,editor_steps (array of 3-6 short numbered-action strings), "
+        "and verification ('safe_vanilla' or 'needs_in_game_check'). "
+        "Allowed task types: item,kill,dimension,advancement. Reward types: item,xp. "
+        "IDs must be namespace:path. Since you receive mod names only and NO registry, "
+        "recipe or documentation data, NEVER invent modded registry IDs or mod mechanics. "
+        "Use vanilla IDs for safe generic objectives. If a mod-specific machine/item is "
+        "necessary but its exact ID is unknown, do not fabricate it: create a quest whose "
+        "editor_steps explicitly instruct the user to open JEI, search the real machine, "
+        "use FTB Item task's item picker, and mark verification='needs_in_game_check'. "
+        "Do not claim that an objective builds a generator/reactor/storage system unless "
+        "the task actually checks the relevant item or achievement. Avoid duplicate "
+        "objectives, meaningless repeats, free diamonds/beacons, and impossible jumps. "
+        "Keep quantities modest and rewards proportionate. The chapter's first quest may "
+        "depend on the previous chapter's final milestone; later quests must depend on "
+        "one or more earlier quests in this chapter. Make the progression link explicit. "
+        "For every quest editor_steps must tell the user: open quest editor, add the "
+        "correct task type, choose the target using the in-game picker, set quantity, "
+        "add reward, connect prerequisites, save. Include chapter creation steps in "
+        "ftb_tip when useful. Do not mention unsupported UI labels as guaranteed."
     )
     chapters = []
+    previous_chapter_last_title = None
     for index, outline in enumerate(outlines, 1):
         title = str(outline.get("title", f"Chapter {index}"))
         description = str(outline.get("description", ""))
         log(f"Designing FTB quest chapter {index}/{len(outlines)}: {title}")
         user = (
-            context + f"\n\nCHAPTER {index}: {title}\nPURPOSE: {description}\n"
-            "Create exactly this one chapter, with 3-8 quests. Use the requested JSON schema."
+            context + f"\\n\\nCHAPTER {index}: {title}\\nPURPOSE: {description}\\n"
+            f"PREVIOUS CHAPTER FINAL MILESTONE: {previous_chapter_last_title or 'none'}\\n"
+            "Create 4-6 meaningful quests for this chapter. Do not repeat basic vanilla "
+            "crafting objectives from earlier chapters. At least half the quests should "
+            "advance the stated chapter purpose. Connect the first quest to the previous "
+            "chapter milestone when one exists. Return the full requested JSON schema."
         )
         chapter = llm.json_from(llm.text(chapter_system, user))
         if isinstance(chapter.get("chapter"), dict):
@@ -165,8 +188,11 @@ def generate_ftb_quest_guide(llm, manifest_path, output_dir, log=print):
             }
         chapter_data["title"] = title
         chapter_data["description"] = description
-        chapter_data["quests"] = chapter.get("quests", [])
-        chapters.append(chapter_data)
+        quests = chapter.get("quests", [])
+        if previous_chapter_last_title and quests and not quests[0].get("depends_on"):
+            quests[0]["depends_on"] = [previous_chapter_last_title]
+        chapters.append({**chapter_data, "quests": quests})
+        previous_chapter_last_title = str(quests[-1].get("title", "")) if quests else None
 
     campaign = _validate_campaign({
         "campaign_title": str(plan.get("campaign_title", manifest.get("concept", "Modpack Campaign"))),
