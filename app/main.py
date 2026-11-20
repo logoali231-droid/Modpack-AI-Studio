@@ -379,11 +379,14 @@ class MainWindow(QMainWindow):
         options_row = QHBoxLayout()
         self.quests = QCheckBox("Generate a progression-sized custom quest campaign (no quest mod needed)")
         self.quests.setChecked(True)
+        self.ftb_quests = QCheckBox("Also generate an FTB Quests editor guide (JSON + Markdown)")
+        self.ftb_quests.setChecked(False)
         self.browser_research = QCheckBox("Use optional Playwright browser research (slower; requires browser setup)")
         self.browser_research.setChecked(False)
         self.backup = QCheckBox("Back up existing mods folder")
         self.backup.setChecked(True)
         options_row.addWidget(self.quests)
+        options_row.addWidget(self.ftb_quests)
         options_row.addWidget(self.browser_research)
         options_row.addWidget(self.backup)
         options_row.addStretch(1)
@@ -1057,6 +1060,7 @@ class MainWindow(QMainWindow):
             "loader": self.loader.currentText(),
             "prompt": self.prompt.toPlainText(),
             "quests": self.quests.isChecked(),
+            "ftb_quest_guide": self.ftb_quests.isChecked(),
             "browser_research": self.browser_research.isChecked(),
             "world_path": self.world_path.text().strip(),
             "backup": self.backup.isChecked(),
@@ -1143,7 +1147,7 @@ class MainWindow(QMainWindow):
             # while the user creates the matching Prism instance.
             for widget in (
                 self.provider, self.model, self.key, self.ollama,
-                self.auto_version, self.loader, self.prompt, self.browser_research
+                self.auto_version, self.loader, self.prompt, self.browser_research, self.ftb_quests
             ):
                 widget.setEnabled(False)
             self.runbtn.setText("2. Continue with this Prism instance")
