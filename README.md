@@ -99,7 +99,7 @@ The **Structure Designer** tab supports single buildings and multi-building sett
 
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research can be wrong. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
-## AI Training Pipeline (Experimental)
+* **Unified AI Training tab:** exports the local mod catalog, generates design briefs, builds both modpack and native quest datasets, and validates JSONL from the desktop GUI.\n\n## AI Training Pipeline (Experimental)
 
 This repository now includes an **experimental AI training pipeline** designed to fine-tune a local Qwen model (e.g., `qwen2.5:3b`) specifically for Minecraft modpack design and quest generation. The pipeline is **local-first**, uses only free tools (Ollama, SQLite, Python), and is intended for users who want to specialize the model beyond generic instruction-following.
 
@@ -116,7 +116,7 @@ Modrinth/CurseForge  →  sync_mods.py  →  SQLite (mods.sqlite3)
                                      ↓
                   build_modpack_dataset.py  →  modpack_design.jsonl (validated examples)
                                      ↓
-                  build_quest_dataset.py    →  quest_generation.jsonl (FTB-style instructions)
+                  build_native_quest_dataset.py → quest_generation.jsonl (native datapack quests)
                                      ↓
                          QLoRA fine-tuning  →  specialized Qwen model
 ```
@@ -130,7 +130,7 @@ training/
 │   ├── export_mods.py            # Export mod table to JSONL for RAG
 │   ├── generate_specs.py         # Generate design briefs from catalog statistics
 │   ├── build_modpack_dataset.py  # Generate & validate modpack design examples
-│   └── build_quest_dataset.py    # (Planned) Generate FTB-style quest instructions
+│   └── build_native_quest_dataset.py # Generate native advancement quest examples
 ├── data/
 │   ├── raw/
 │   │   └── mod_knowledge.jsonl   # Full mod catalog (RAG source)
@@ -138,7 +138,7 @@ training/
 ├── datasets/
 │   ├── specs_generated.json      # Auto-generated design briefs
 │   ├── modpack_design.jsonl      # Validated training examples (modpack design)
-│   ├── quest_generation.jsonl    # (Planned) FTB quest instructions
+│   ├── quest_generation.jsonl    # Native datapack quest examples
 │   └── _failed_raw/              # Raw model outputs that failed validation (debug)
 └── evaluation/                   # (Reserved for test prompts and metrics)
 ```
@@ -151,11 +151,11 @@ training/
 | `export_mods.py` | Reads the `mods` table and writes a JSONL file with one mod per line. JSON columns are parsed into arrays. | `training/data/raw/mod_knowledge.jsonl` |
 | `generate_specs.py` | Analyzes the catalog to produce design briefs (`SPECS`) with version, loader, theme, category, grind level, and focus. Uses round-robin to ensure diversity across themes. | `training/datasets/specs_generated.json` |
 | `build_modpack_dataset.py` | For each spec, fetches a filtered set of real mods, prompts Ollama (with few-shot and hard Minecraft rules), and validates the JSON response. Only valid examples are written. | `training/datasets/modpack_design.jsonl` |
-| `build_quest_dataset.py` | *(Planned)* Generates FTB Quests chapter instructions (title, description, icon, task, reward, dependencies, ftb_tip) using the same grounding approach. | `training/datasets/quest_generation.jsonl` |
+| `build_native_quest_dataset.py` | Generates one native quest chapter per brief, then validates it with the exact `app.quests.validate_campaign` validator used by the app. Vanilla item IDs only, matching the current datapack implementation. | `training/datasets/quest_generation.jsonl` |
 
 ### Validation rules
 
-Both dataset generators apply **strict deterministic validators**:
+The modpack dataset generator applies deterministic design/catalog checks. The native quest dataset is checked against the app's own datapack validator:
 
 * **Modpack design:**
   - `progression` must contain 4–6 verb phrases, each with ≥2 words.
@@ -169,7 +169,7 @@ Both dataset generators apply **strict deterministic validators**:
   - No mod names in descriptions; only in `task.target` / `reward.target`.
   - Same Minecraft logic checks.
 
-### How to run (modpack dataset example)
+### Run everything from the desktop GUI\n\nOpen the **AI Training** tab, choose the installed Ollama model and the number of design briefs, then click **Generate datasets de modpacks + quests**. The GUI runs catalog export, brief generation, modpack dataset generation, native quest dataset generation and JSONL validation in a background thread. Existing examples are resumed/appended instead of being deleted.\n\nThe GUI uses the selected local model through `MODPACK_AI_MODEL`. It does not run QLoRA locally.\n\n### Manual command-line alternative
 
 ```bash
 # 1. Activate the virtual environment
