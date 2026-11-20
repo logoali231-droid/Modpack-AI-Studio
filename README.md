@@ -99,7 +99,9 @@ The **Structure Designer** tab supports single buildings and multi-building sett
 
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research can be wrong. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
-* **Unified AI Training tab:** exports the local mod catalog, generates design briefs, builds both modpack and native quest datasets, and validates JSONL from the desktop GUI.\n\n## AI Training Pipeline (Experimental)
+* **Unified AI Training tab:** exports the local mod catalog, generates design briefs, builds both modpack and native quest datasets, and validates JSONL from the desktop GUI.
+
+## AI Training Pipeline (Experimental)
 
 This repository now includes an **experimental AI training pipeline** designed to fine-tune a local Qwen model (e.g., `qwen2.5:3b`) specifically for Minecraft modpack design and quest generation. The pipeline is **local-first**, uses only free tools (Ollama, SQLite, Python), and is intended for users who want to specialize the model beyond generic instruction-following.
 
@@ -168,7 +170,13 @@ The modpack dataset generator applies deterministic design/catalog checks. The n
   - Task and reward IDs must be vanilla `minecraft:` items because the current datapack validator intentionally filters out modded items.
   - Every generated chapter is checked with `app.quests.validate_campaign` before it is written.
 
-### Run everything from the desktop GUI\n\nOpen the **AI Training** tab, choose the installed Ollama model and the number of design briefs, then click **Generate datasets de modpacks + quests**. The GUI runs catalog export, brief generation, modpack dataset generation, native quest dataset generation and JSONL validation in a background thread. Existing examples are resumed/appended instead of being deleted.\n\nThe GUI uses the selected local model through `MODPACK_AI_MODEL`. It does not run QLoRA locally.\n\n### Manual command-line alternative
+### Run everything from the desktop GUI
+
+Open the **AI Training** tab, choose the installed Ollama model and the number of design briefs, then click **Generate datasets de modpacks + quests**. The GUI runs catalog export, brief generation, modpack dataset generation, native quest dataset generation and JSONL validation in a background thread. Existing examples are resumed/appended instead of being deleted.
+
+The GUI uses the selected local model through `MODPACK_AI_MODEL`. It does not run QLoRA locally.
+
+### Manual command-line alternative
 
 ```bash
 # 1. Activate the virtual environment
