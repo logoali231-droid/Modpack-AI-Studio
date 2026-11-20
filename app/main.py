@@ -197,6 +197,7 @@ class Worker(QThread):
                     self.cfg.get("training_task", ""),
                     self.log.emit,
                     model=self.cfg.get("training_model", "qwen2.5:3b"),
+                    ollama_url=self.cfg.get("ollama_url", "http://localhost:11434"),
                     count=self.cfg.get("training_count", 100),
                     fresh=bool(self.cfg.get("training_fresh", False)),
                 )
@@ -861,6 +862,12 @@ class MainWindow(QMainWindow):
                 raise ValueError
         except ValueError:
             QMessageBox.warning(self, "Invalid count", "Enter a number between 1 and 1000.")
+            return
+        if not self.provider.currentText().startswith("Ollama"):
+            QMessageBox.warning(
+                self, "Ollama required",
+                "Dataset generation scripts use local Ollama. Select Ollama and choose the model before starting a training task."
+            )
             return
         cfg = self.build_ai_config()
         if cfg is None:
