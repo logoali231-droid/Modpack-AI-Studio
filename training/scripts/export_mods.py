@@ -1,12 +1,11 @@
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = (
-    Path.home()
-    / ".local/share/modpack-ai-studio/mods.sqlite3"
-)
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+DB_PATH = DATA_HOME / "modpack-ai-studio" / "mods.sqlite3"
 
 OUTPUT = Path("training/data/raw/mod_knowledge.jsonl")
 
