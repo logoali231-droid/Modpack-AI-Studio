@@ -1,0 +1,29 @@
+# spec:
+{
+  "mc": "1.20.4",
+  "loader": "forge",
+  "theme": "primitive survival",
+  "category": "food",
+  "grind": "low",
+  "focus": "no worldgen content, only adventure via Pam's HarvestCraft 2: Food Core"
+}
+
+# raw:
+{
+  "progression": [
+    "Sow seeds and craft a basic farm",
+    "Harvest crops, gather resources from farms",
+    "Mine stone, craft stone tools to expand"
+  ],
+  "design_rules": [
+    "Focus on farming efficiency over exploration",
+    "Keep the crafting system simple for low grind",
+    "Encourage resource gathering through survival means",
+    "Incorporate mod rewards without requiring manual recipes"
+  ],
+  "suggested_mods": [
+    "Pam's HarvestCraft 2: Food Core",
+    "Lemedian (Farmer's Delight)",
+    "Farmers Delight Kacchi"
+  ]
+}

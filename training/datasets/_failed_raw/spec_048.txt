@@ -1,0 +1,33 @@
+# spec:
+{
+  "mc": "1.18.2",
+  "loader": "forge",
+  "theme": "hardcore survival",
+  "category": "mobs",
+  "grind": "high",
+  "focus": "YUNG's Cave Biomes-centered with Epic Fight as side path"
+}
+
+# raw:
+{
+  "progression": [
+    "Download and enable YUNG's Cave Biomes",
+    "Punch trees to craft a wooden pickaxe and mine stone blocks",
+    "Mine coal for furnace fuel, create a simple forge from cobblestone",
+    "Craft iron tools and build structures with the added cave biomes",
+    "Collect obsidian and craft diamond tools for deeper caves",
+    "Enable Epic Fight to progress further, earn XP and loot"
+  ],
+  "design_rules": [
+    "Focus on survival first before side quests like Epic Fight",
+    "Keep tool tiers consistent with Minecraft progression",
+    "Encourage exploration through different cave biomes",
+    "Rewards should include not just items but also gameplay mechanics",
+    "Balance the grind level to ensure progress is satisfying"
+  ],
+  "suggested_mods": [
+    "YUNG's Cave Biomes",
+    "Epic Fight",
+    "Apotheosis Addon Compat"
+  ]
+}
