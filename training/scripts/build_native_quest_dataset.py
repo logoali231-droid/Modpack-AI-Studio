@@ -128,6 +128,17 @@ def main():
                 chapter = json.loads(raw)
                 if not isinstance(chapter, dict) or len(chapter.get("quests", [])) != 3:
                     raise ValueError("Chapter must contain exactly 3 quests.")
+                for quest_index, quest in enumerate(chapter["quests"], 1):
+                    if not isinstance(quest, dict) or not isinstance(quest.get("tasks"), list):
+                        raise ValueError(f"Quest {quest_index} has no task list.")
+                    for task in quest["tasks"]:
+                        item = task.get("item") if isinstance(task, dict) else None
+                        if not isinstance(item, str) or not item.startswith("minecraft:"):
+                            raise ValueError(f"Quest {quest_index} contains a non-vanilla task item.")
+                    reward = quest.get("reward")
+                    reward_item = reward.get("item") if isinstance(reward, dict) else None
+                    if not isinstance(reward_item, str) or not reward_item.startswith("minecraft:"):
+                        raise ValueError(f"Quest {quest_index} contains a non-vanilla reward item.")
                 chapter["title"] = str(chapter.get("title") or f"Chapter {index}")[:80]
                 chapter["description"] = str(chapter.get("description") or spec.get("focus", ""))[:200]
                 validated = validate_campaign({"chapters": [chapter]})["chapters"][0]
