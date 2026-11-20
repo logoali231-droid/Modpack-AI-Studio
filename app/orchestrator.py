@@ -533,13 +533,23 @@ class ModpackPipeline:
             )
         self.log(f"Prism instance verified: Minecraft {prism_mc}.")
 
-        # Validate the optional world destination before any mod files are changed.
+        # Native advancement quests are optional. An unsupported datapack schema
+        # must never block the primary modpack installation.
         world_value = str(self.c.get("world_path", "")).strip()
-        if self.c.get("quests"):
-            # Fail before mod discovery/download if this release has no verified
-            # native-advancement datapack schema adapter yet.
-            pack_format_for(mc)
-        if self.c.get("quests") and world_value:
+        native_quests_enabled = bool(self.c.get("quests"))
+        native_quest_skip_reason = ""
+        if native_quests_enabled:
+            try:
+                pack_format_for(mc)
+            except ValueError as exc:
+                native_quests_enabled = False
+                native_quest_skip_reason = str(exc)
+                self.log(
+                    "WARNING · Native Advancement quests are unavailable for this Minecraft "
+                    f"version ({mc}). The modpack installation will continue without them. "
+                    f"Reason: {exc}"
+                )
+        if native_quests_enabled and world_value:
             world_root = Path(world_value).expanduser().resolve()
             if not world_root.is_dir() or not (world_root / "level.dat").is_file():
                 raise ValueError(
@@ -698,7 +708,17 @@ class ModpackPipeline:
         self.progress(88, 100, "Mod installation finished.")
 
         quest_status = {"status": "disabled"}
-        if self.c.get("quests"):
+        if self.c.get("quests") and not native_quests_enabled:
+            quest_status = {
+                "status": "skipped_unsupported_version",
+                "minecraft": mc,
+                "error": native_quest_skip_reason,
+            }
+            self.log(
+                "Native quests skipped for this version. Mod installation remains successful. "
+                "Use the separate FTB Quests editor guide if enabled and compatible with your pack."
+            )
+        if native_quests_enabled:
             quest_status = {"status": "failed", "error": "Quest generation did not complete."}
             self.progress(0, 0, "AI is generating your native progression-sized native quest campaign…")
             self.log("4/4 · Designing a native Minecraft advancement quest campaign…")
