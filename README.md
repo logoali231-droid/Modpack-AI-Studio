@@ -15,7 +15,7 @@ Vou atualizar o `README.md` para incluir todo o pipeline de treinamento de IA qu
 * Required dependency graph resolution from catalog metadata.
 * **JAR-internal dependency verification:** inspects Forge/NeoForge `mods.toml`, Fabric/Quilt metadata, and legacy `mcmod.info` IDs before installation. Downloads are staged and checked before being copied into the Prism instance.
 * Installs into an existing Prism Launcher instance, with optional mods-folder backup.
-* Progression-sized quest campaigns generated as native Minecraft datapacks. Chapter count is no longer fixed at three. No FTB Quests or other quest mod is required.
+* Progression-sized quest campaigns generated as native Minecraft datapacks. Optional FTB Quests campaign design can also be generated as structured JSON + Markdown editor instructions from the installed modpack manifest. Chapter count is progression-driven.
 * Optional Playwright browser research can collect public documentation snippets for the local model. Browser text is untrusted context, never proof of compatibility.
 * API keys stored in the Linux desktop keyring, never in the repository.
 * **Local Mod Library (Modrinth + CurseForge):** maintains a local SQLite index at `~/.local/share/modpack-ai-studio/mods.sqlite3` (or `$XDG_DATA_HOME/modpack-ai-studio/mods.sqlite3`). Search and filter cached projects by text, Minecraft version, loader, and source. Use **Sync from selected catalog** to search the official Modrinth or CurseForge catalog and cache up to 20 matching projects, including full descriptions where the provider API exposes them. Normal modpack generation also caches catalog summaries and enriches selected projects.
@@ -61,6 +61,15 @@ chmod +x launch.sh
 ```
 
 Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let the AI choose the Minecraft version, create a matching Prism instance, then select its folder. If you already have a world save, optionally select the world folder containing `level.dat` to install the quest datapack directly.
+
+## Optional FTB Quests editor guide
+
+On the Create page, enable **Also generate an FTB Quests editor guide (JSON + Markdown)**. After the modpack is installed, the app asks the model to design a multi-chapter FTB campaign using the modpack concept and installed mod list. It saves:
+
+- `Modpack_AI_FTB_Quest_Design.json`: structured chapter/quest plan, task/reward candidates, dependencies and editor tips.
+- `Modpack_AI_FTB_Quest_Design.md`: readable step-by-step guide for building the campaign in FTB Quests.
+
+This is a design/export workflow, not an FTB Quests importer. The model sees installed mod names, not the runtime registry, so syntax validation cannot prove that a modded item/entity/dimension/advancement ID exists. Verify candidate IDs in JEI or in-game before entering them. The app does not create FTB .snbt files or automate clicks in the FTB editor.
 
 ## Quest system scope
 
