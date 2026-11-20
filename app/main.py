@@ -191,6 +191,19 @@ class Worker(QThread):
                     "phase": "catalog_synced", **result
                 })
                 return
+            if phase == "training_task":
+                from .training_tasks import run_training_task
+                result = run_training_task(
+                    self.cfg.get("training_task", ""),
+                    self.log.emit,
+                    model=self.cfg.get("training_model", "qwen2.5:3b"),
+                    count=self.cfg.get("training_count", 100),
+                    fresh=bool(self.cfg.get("training_fresh", False)),
+                )
+                self.done.emit(True, f"Training task completed: {result['task']}", {
+                    "phase": "training_task_complete", **result
+                })
+                return
             if phase == "retry_quests":
                 result = pipeline.retry_quests_only()
                 self.done.emit(bool(result.get("success")), result.get("message", "Quest retry finished."), {
@@ -496,6 +509,55 @@ class MainWindow(QMainWindow):
         tabs.addTab(library_page, "Mod Library")
         self.refresh_library_stats()
 
+        training_page = QWidget()
+        training_layout = QVBoxLayout(training_page)
+        training_layout.setContentsMargins(12, 14, 12, 12)
+        training_layout.addWidget(QLabel(
+            "Build and validate local Qwen training datasets without using the terminal. "
+            "The catalog JSONL is a knowledge/RAG export, not a fine-tuning dataset. "
+            "Only review and train on validated examples."
+        ))
+        training_form = QFormLayout()
+        self.training_count = QLineEdit("100")
+        self.training_fresh = QCheckBox("Start dataset generation from scratch (replace existing JSONL)")
+        self.training_status = QLabel("Dataset status: checking…")
+        self.training_status.setObjectName("subtitle")
+        training_form.addRow("Number of design briefs", self.training_count)
+        training_form.addRow(self.training_fresh)
+        training_layout.addLayout(training_form)
+        training_layout.addWidget(self.training_status)
+        training_buttons = QHBoxLayout()
+        self.training_export_button = QPushButton("1. Export mod catalog")
+        self.training_specs_button = QPushButton("2. Generate design briefs")
+        self.training_modpack_button = QPushButton("3. Build modpack dataset")
+        self.training_quests_button = QPushButton("4. Build FTB quest dataset")
+        for button in (self.training_export_button, self.training_specs_button,
+                       self.training_modpack_button, self.training_quests_button):
+            button.setObjectName("secondaryButton")
+            training_buttons.addWidget(button)
+        training_layout.addLayout(training_buttons)
+        training_actions = QHBoxLayout()
+        self.training_errors_button = QPushButton("Export confirmed error lessons")
+        self.training_validate_button = QPushButton("Validate all datasets")
+        training_actions.addWidget(self.training_errors_button)
+        training_actions.addWidget(self.training_validate_button)
+        training_layout.addLayout(training_actions)
+        training_note = QLabel(
+            "Order: export catalog → generate briefs → build modpack examples → build FTB quest examples → validate. "
+            "The quest dataset contains FTB-editor instructions; it does not create .snbt files or install FTB Quests. "
+            "QLoRA training still runs on a GPU runtime such as Colab, not inside this local GUI."
+        )
+        training_note.setWordWrap(True)
+        training_layout.addWidget(training_note)
+        self.training_export_button.clicked.connect(lambda: self.run_training("export_catalog"))
+        self.training_specs_button.clicked.connect(lambda: self.run_training("generate_specs"))
+        self.training_modpack_button.clicked.connect(lambda: self.run_training("build_modpack"))
+        self.training_quests_button.clicked.connect(lambda: self.run_training("build_quests"))
+        self.training_errors_button.clicked.connect(lambda: self.run_training("export_errors"))
+        self.training_validate_button.clicked.connect(lambda: self.run_training("validate"))
+        tabs.addTab(training_page, "AI Training")
+        self.refresh_training_status()
+
         structure_page = QWidget()
         structure_layout = QVBoxLayout(structure_page)
         structure_layout.setContentsMargins(12, 14, 12, 12)
@@ -782,6 +844,43 @@ class MainWindow(QMainWindow):
         else:
             self.continue_generation()
 
+    def refresh_training_status(self):
+        try:
+            from .training_tasks import training_counts
+            counts = training_counts()
+            self.training_status.setText(
+                "Dataset status: " + " · ".join(f"{name}: {count}" for name, count in counts.items())
+            )
+        except Exception as exc:
+            self.training_status.setText(f"Dataset status unavailable: {exc}")
+
+    def run_training(self, task):
+        try:
+            count = int(self.training_count.text().strip())
+            if count < 1 or count > 1000:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Invalid count", "Enter a number between 1 and 1000.")
+            return
+        cfg = self.build_ai_config()
+        if cfg is None:
+            return
+        cfg.update({
+            "phase": "training_task",
+            "training_task": task,
+            "training_model": self.model.currentText().strip() or "qwen2.5:3b",
+            "training_count": count,
+            "training_fresh": self.training_fresh.isChecked(),
+        })
+        if task in ("build_modpack", "build_quests") and self.training_fresh.isChecked():
+            answer = QMessageBox.question(
+                self, "Replace dataset?",
+                "Fresh mode deletes the existing output JSONL before generating new examples. Continue?"
+            )
+            if answer != QMessageBox.Yes:
+                return
+        self.launch_worker(cfg)
+
     def refresh_library_stats(self):
         try:
             stats = ModDatabase().stats()
@@ -965,7 +1064,7 @@ class MainWindow(QMainWindow):
 
     def launch_worker(self, cfg):
         self.runbtn.setEnabled(False)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button", "training_export_button", "training_specs_button", "training_modpack_button", "training_quests_button", "training_errors_button", "training_validate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(False)
@@ -1020,7 +1119,7 @@ class MainWindow(QMainWindow):
     def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button", "training_export_button", "training_specs_button", "training_modpack_button", "training_quests_button", "training_errors_button", "training_validate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(True)
@@ -1060,6 +1159,11 @@ class MainWindow(QMainWindow):
             self.error_output.setPlainText(json.dumps(diagnosis, ensure_ascii=False, indent=2))
             self.statusBar().showMessage(message)
             QMessageBox.information(self, "Diagnosis complete", message)
+            return
+        if payload.get("phase") == "training_task_complete":
+            self.refresh_training_status()
+            self.statusBar().showMessage(message)
+            QMessageBox.information(self, "AI training task", message)
             return
         if payload.get("phase") == "catalog_synced":
             self.refresh_library_stats()
