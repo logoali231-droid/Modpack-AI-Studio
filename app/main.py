@@ -8,7 +8,7 @@ import requests
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QTextEdit, QPushButton, QLabel, QProgressBar,
-    QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea
+    QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt, QPointF
 from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
@@ -242,7 +242,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Modpack AI Studio")
-        self.resize(1080, 850)
+        self.resize(1100, 760)
+        self.setMinimumSize(680, 520)
         self.elapsed = QElapsedTimer()
         self.phase = "choose_version"
         self.selected_version = None
@@ -284,7 +285,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(progress_group)
 
         tabs = QTabWidget()
+        tabs.setDocumentMode(True)
+        tabs.setUsesScrollButtons(True)
+        tabs.setMinimumSize(0, 0)
         layout.addWidget(tabs, 1)
+
+        def add_scrollable_tab(page, title):
+            """Put every feature page in its own responsive vertical scroll area."""
+            page.setMinimumSize(0, 0)
+            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            scroll.setWidget(page)
+            tabs.addTab(scroll, title)
+            return scroll
 
         create_page = QWidget()
         create_layout = QVBoxLayout(create_page)
@@ -372,7 +390,8 @@ class MainWindow(QMainWindow):
             "Describe the experience you want: progression, survival, technology, "
             "difficulty, exploration, preferred Minecraft version and required mods…"
         )
-        self.prompt.setMinimumHeight(170)
+        self.prompt.setMinimumHeight(130)
+        self.prompt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         prompt_layout.addWidget(self.prompt)
         create_layout.addWidget(prompt_group, 1)
 
@@ -397,14 +416,7 @@ class MainWindow(QMainWindow):
         self.runbtn.clicked.connect(self.start)
         create_layout.addWidget(self.runbtn)
 
-        # Keep the Create page usable on smaller displays and when maximized.
-        create_scroll = QScrollArea()
-        create_scroll.setWidgetResizable(True)
-        create_scroll.setFrameShape(QScrollArea.NoFrame)
-        create_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        create_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        create_scroll.setWidget(create_page)
-        tabs.addTab(create_scroll, "Create")
+        add_scrollable_tab(create_page, "Create")
 
         activity_page = QWidget()
         activity_layout = QVBoxLayout(activity_page)
@@ -427,7 +439,7 @@ class MainWindow(QMainWindow):
             "font-family: 'DejaVu Sans Mono'; font-size: 12px; }"
         )
         activity_layout.addWidget(self.log, 1)
-        tabs.addTab(activity_page, "Activity")
+        add_scrollable_tab(activity_page, "Activity")
 
         error_page = QWidget()
         error_layout = QVBoxLayout(error_page)
@@ -438,7 +450,7 @@ class MainWindow(QMainWindow):
         ))
         self.error_input = QTextEdit()
         self.error_input.setPlaceholderText("Paste the complete relevant error log here…")
-        self.error_input.setMinimumHeight(150)
+        self.error_input.setMinimumHeight(120)
         error_layout.addWidget(self.error_input)
         error_actions = QHBoxLayout()
         self.analyze_button = QPushButton("Error Auto Fix · Analyze")
@@ -461,7 +473,7 @@ class MainWindow(QMainWindow):
         self.retry_quests_button.setObjectName("secondaryButton")
         self.retry_quests_button.clicked.connect(self.retry_quests)
         error_layout.addWidget(self.retry_quests_button)
-        tabs.addTab(error_page, "Error Auto Fix")
+        add_scrollable_tab(error_page, "Error Auto Fix")
 
         library_page = QWidget()
         library_layout = QVBoxLayout(library_page)
@@ -510,7 +522,7 @@ class MainWindow(QMainWindow):
         self.library_results.setReadOnly(True)
         self.library_results.setPlaceholderText("Search the local library or sync compatible projects from an official catalog.")
         library_layout.addWidget(self.library_results, 1)
-        tabs.addTab(library_page, "Mod Library")
+        add_scrollable_tab(library_page, "Mod Library")
         self.refresh_library_stats()
 
         training_page = QWidget()
@@ -559,7 +571,7 @@ class MainWindow(QMainWindow):
         self.training_quests_button.clicked.connect(lambda: self.run_training("build_quests"))
         self.training_errors_button.clicked.connect(lambda: self.run_training("export_errors"))
         self.training_validate_button.clicked.connect(lambda: self.run_training("validate"))
-        tabs.addTab(training_page, "AI Training")
+        add_scrollable_tab(training_page, "AI Training")
         self.refresh_training_status()
 
         structure_page = QWidget()
@@ -574,7 +586,7 @@ class MainWindow(QMainWindow):
         self.structure_version = QComboBox()
         self.structure_version.addItem("Minecraft Java 1.16.5")
         self.structure_description = QTextEdit()
-        self.structure_description.setMinimumHeight(180)
+        self.structure_description.setMinimumHeight(130)
         self.structure_description.setPlaceholderText(
             "Example: An abandoned medieval watchtower, 3 floors, mossy stone, "
             "a library, a hidden treasure room, a balcony and a broken roof. "
@@ -626,7 +638,7 @@ class MainWindow(QMainWindow):
         self.structure_result.setReadOnly(True)
         self.structure_result.setPlaceholderText("Blueprint summary, block count and output path will appear here.")
         structure_layout.addWidget(self.structure_result, 1)
-        tabs.addTab(structure_page, "Structure Designer")
+        add_scrollable_tab(structure_page, "Structure Designer")
 
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
@@ -1231,7 +1243,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLE)
     window = MainWindow()
-    window.showMaximized()
+    window.show()
     sys.exit(app.exec())
 
 
