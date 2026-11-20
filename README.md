@@ -162,12 +162,11 @@ The modpack dataset generator applies deterministic design/catalog checks. The n
   - `design_rules` must not mention any mod name.
   - `suggested_mods` must be a subset of the mods provided in the prompt.
   - Minecraft logic checks: wood → stone → iron → diamond → obsidian; no “craft flint” or “mine obsidian” without diamond.
-* **Quest generation (planned):**
-  - 3–8 quests per chapter.
-  - First quest has `depends_on: []`; all others depend on at least one previous quest.
-  - `icon` and `task.target` must contain a namespace (`mod:id`).
-  - No mod names in descriptions; only in `task.target` / `reward.target`.
-  - Same Minecraft logic checks.
+* **Native quest generation:**
+  - Exactly 3 quests per generated chapter, matching the live app prompt.
+  - Every quest has a title, description, non-empty `tasks` array and `reward`.
+  - Task and reward IDs must be vanilla `minecraft:` items because the current datapack validator intentionally filters out modded items.
+  - Every generated chapter is checked with `app.quests.validate_campaign` before it is written.
 
 ### Run everything from the desktop GUI\n\nOpen the **AI Training** tab, choose the installed Ollama model and the number of design briefs, then click **Generate datasets de modpacks + quests**. The GUI runs catalog export, brief generation, modpack dataset generation, native quest dataset generation and JSONL validation in a background thread. Existing examples are resumed/appended instead of being deleted.\n\nThe GUI uses the selected local model through `MODPACK_AI_MODEL`. It does not run QLoRA locally.\n\n### Manual command-line alternative
 
