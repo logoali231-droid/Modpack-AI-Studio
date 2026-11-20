@@ -739,7 +739,13 @@ class ModpackPipeline:
             return {
                 "success": True,
                 "quests_failed": True,
-                "message": "Mods installed successfully, but quest generation failed. See the Activity log and manifest."
+                "message": "Mods installed successfully, but native quest generation failed. See the Activity log and manifest."
+            }
+        if ftb_quest_status["status"] == "failed":
+            return {
+                "success": True,
+                "ftb_quests_failed": True,
+                "message": "Mods installed successfully, but FTB quest guide generation failed. See the Activity log and manifest."
             }
         return {
             "success": True,
