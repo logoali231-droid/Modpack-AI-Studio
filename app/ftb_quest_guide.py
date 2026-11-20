@@ -17,6 +17,7 @@ def _validate_campaign(data):
     chapters = data["chapters"]
     if not 1 <= len(chapters) <= 12:
         raise ValueError("Campaign must contain 1-12 chapters.")
+    all_prior_titles = []
     for ci, chapter in enumerate(chapters, 1):
         if not isinstance(chapter, dict) or not isinstance(chapter.get("quests"), list):
             raise ValueError(f"Chapter {ci} is missing its quests array.")
@@ -28,9 +29,8 @@ def _validate_campaign(data):
         quests = chapter["quests"]
         if not 3 <= len(quests) <= 8:
             raise ValueError(f"Chapter {ci} must contain 3-8 quests.")
-        prior_titles = []
         for qi, quest in enumerate(quests, 1):
-            for field in ("title", "description", "icon", "task", "reward", "depends_on", "ftb_tip"):
+            for field in ("title", "description", "icon", "task", "reward", "depends_on", "ftb_tip", "editor_steps", "verification"):
                 if field not in quest:
                     raise ValueError(f"Chapter {ci}, quest {qi} is missing {field}.")
             if not ID_RE.fullmatch(str(quest["icon"])):
@@ -55,13 +55,17 @@ def _validate_campaign(data):
             deps = quest["depends_on"]
             if not isinstance(deps, list):
                 raise ValueError(f"Chapter {ci}, quest {qi} dependencies must be a list.")
-            if qi == 1 and deps:
-                raise ValueError(f"Chapter {ci}, first quest cannot have dependencies.")
-            if qi > 1 and not deps:
-                raise ValueError(f"Chapter {ci}, quest {qi} must depend on a previous quest.")
-            if any(dep not in prior_titles for dep in deps):
+            if ci == 1 and qi == 1 and deps:
+                raise ValueError("The first quest in the campaign cannot have dependencies.")
+            if (ci > 1 or qi > 1) and not deps:
+                raise ValueError(f"Chapter {ci}, quest {qi} must depend on a previous milestone.")
+            if any(dep not in all_prior_titles for dep in deps):
                 raise ValueError(f"Chapter {ci}, quest {qi} depends on a quest that does not precede it.")
-            prior_titles.append(str(quest["title"]))
+            if not isinstance(quest["editor_steps"], list) or len(quest["editor_steps"]) < 3:
+                raise ValueError(f"Chapter {ci}, quest {qi} needs at least 3 editor steps.")
+            if quest["verification"] not in ("safe_vanilla", "needs_in_game_check"):
+                raise ValueError(f"Chapter {ci}, quest {qi} has invalid verification status.")
+            all_prior_titles.append(str(quest["title"]))
     return data
 
 
@@ -90,7 +94,10 @@ def _markdown(campaign, manifest):
                 f"- Task: {task['type']} · `{task['target']}`" + (f" × {task['count']}" if "count" in task else ""),
                 f"- Reward: {reward['type']} · `{reward.get('target', 'XP')}` × {reward['amount']}",
                 f"- Depends on: {', '.join(quest['depends_on']) if quest['depends_on'] else 'None'}",
+                f"- Verification: {quest['verification']}",
                 f"- FTB editor tip: {quest['ftb_tip']}",
+                "- Editor steps:",
+                *[f"  {step_no}. {step}" for step_no, step in enumerate(quest["editor_steps"], 1)],
                 "",
             ])
     lines.extend([
@@ -98,7 +105,7 @@ def _markdown(campaign, manifest):
         "",
         "1. Open FTB Quests in the target instance and create the chapters in the listed order.",
         "2. Create each quest and add the listed task and reward.",
-        "3. Link dependencies exactly as listed.",
+        "3. Link dependencies exactly as listed, including links between chapters.",
         "4. Verify every candidate ID in the actual installed modpack; replace IDs that do not exist.",
         "5. Save and test the quest book in a disposable world before using the main save.",
         "",
