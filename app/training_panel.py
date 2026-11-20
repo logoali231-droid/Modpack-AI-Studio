@@ -8,13 +8,13 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QSpinBox,
-    QLineEdit, QPushButton, QTextEdit, QMessageBox, QGroupBox
+    QLineEdit, QPushButton, QTextEdit, QMessageBox, QGroupBox, QProgressBar
 )
 
 
 class DatasetWorker(QThread):
     log = Signal(str)
-    progress = Signal(int, int)
+    progress = Signal(int)
     done = Signal(bool, str)
 
     def __init__(self, root, model, count):
@@ -80,10 +80,10 @@ class DatasetWorker(QThread):
                  ["training/scripts/build_native_quest_dataset.py"]),
             ]
             for index, (label, args) in enumerate(steps, 1):
-                self.progress.emit(index - 1, len(steps) + 1)
+                self.progress.emit(index - 1)
                 self.run_command(label, args, env)
 
-            self.progress.emit(4, 5)
+            self.progress.emit(4)
             design = self.root / "training/datasets/modpack_design.jsonl"
             quests = self.root / "training/datasets/quest_generation.jsonl"
             mods = self.root / "training/data/raw/mod_knowledge.jsonl"
@@ -91,7 +91,7 @@ class DatasetWorker(QThread):
             self.validate_jsonl(quests)
             if not mods.exists() or mods.stat().st_size == 0:
                 raise RuntimeError("O catálogo JSONL está vazio.")
-            self.progress.emit(5, 5)
+            self.progress.emit(5)
             self.done.emit(True, "Os datasets de modpacks e quests foram gerados e validados.")
         except Exception as exc:
             self.log.emit(f"✗ ERRO: {type(exc).__name__}: {exc}")
@@ -143,7 +143,7 @@ class DatasetPanel(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
-        self.progress = __import__("PySide6.QtWidgets", fromlist=["QProgressBar"]).QProgressBar()
+        self.progress = QProgressBar()
         self.progress.setRange(0, 5)
         self.progress.setValue(0)
         layout.addWidget(self.progress)
