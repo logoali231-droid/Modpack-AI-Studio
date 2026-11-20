@@ -19,6 +19,7 @@ Vou atualizar o `README.md` para incluir todo o pipeline de treinamento de IA qu
 * Optional Playwright browser research can collect public documentation snippets for the local model. Browser text is untrusted context, never proof of compatibility.
 * API keys stored in the Linux desktop keyring, never in the repository.
 * **Local Mod Library (Modrinth + CurseForge):** maintains a local SQLite index at `~/.local/share/modpack-ai-studio/mods.sqlite3` (or `$XDG_DATA_HOME/modpack-ai-studio/mods.sqlite3`). Search and filter cached projects by text, Minecraft version, loader, and source. Use **Sync from selected catalog** to search the official Modrinth or CurseForge catalog and cache up to 20 matching projects, including full descriptions where the provider API exposes them. Normal modpack generation also caches catalog summaries and enriches selected projects.
+* **AI Training tab:** runs catalog export, design-brief generation, modpack/FTB quest dataset generation, confirmed-error export, and dataset validation from the desktop GUI. Dataset generation uses the selected local Ollama model.
 * **Error Auto Fix and persistent lessons:** sends selected logs to the configured model for diagnosis. Reports evidence, likely causes, safe repair steps, and a code-change suggestion; does not silently edit the project or delete files. Each diagnosis is stored locally under `~/.local/share/modpack-ai-studio/error_lessons.json`. Only lessons explicitly confirmed by the user are reused as context in later modpack planning, quest planning, and error analyses.
 * **AI Structure Designer:** supports single buildings and multi-building settlements. Qwen creates a compact architectural plan; Python validates it, builds the block geometry, and exports one vanilla structure NBT file for Minecraft Java 1.16.5 (DataVersion 2586). Includes interactive isometric 3D preview, modded block palette support, and one constrained repair attempt on invalid JSON.
 
@@ -99,6 +100,21 @@ The **Structure Designer** tab supports single buildings and multi-building sett
 
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research can be wrong. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
+## AI Training from the desktop GUI
+
+Open the **AI Training** tab after syncing the Mod Library. The buttons run the same scripts documented below, without requiring terminal commands:
+
+1. Export the SQLite mod catalog to JSONL (knowledge/RAG source).
+2. Generate diverse design briefs from the real catalog.
+3. Generate and validate modpack-design examples.
+4. Generate FTB Quests editor-instruction examples.
+5. Export confirmed Error Auto Fix cases that include their original logs.
+6. Validate the generated JSONL datasets.
+
+Use the same local Ollama model selected in the main window. The **Fresh** option deletes and rebuilds the selected dataset outputs, so the GUI asks for confirmation first. The QLoRA training stage is intentionally separate and still requires a compatible GPU runtime; the desktop GUI prepares and validates the data but does not pretend that CPU-side dataset generation is model fine-tuning.
+
+The FTB quest dataset is for teaching the model campaign design and producing structured editor instructions. It does not create FTB SNBT files, install FTB Quests, or automatically click through the FTB editor. The existing modpack-generation checkbox still creates the app's separate native Minecraft Advancements datapack.
+
 ## AI Training Pipeline (Experimental)
 
 This repository now includes an **experimental AI training pipeline** designed to fine-tune a local Qwen model (e.g., `qwen2.5:3b`) specifically for Minecraft modpack design and quest generation. The pipeline is **local-first**, uses only free tools (Ollama, SQLite, Python), and is intended for users who want to specialize the model beyond generic instruction-following.
@@ -130,7 +146,9 @@ training/
 │   ├── export_mods.py            # Export mod table to JSONL for RAG
 │   ├── generate_specs.py         # Generate design briefs from catalog statistics
 │   ├── build_modpack_dataset.py  # Generate & validate modpack design examples
-│   └── build_quest_dataset.py    # (Planned) Generate FTB-style quest instructions
+│   ├── build_quest_dataset.py    # Generate FTB-style quest instructions
+│   ├── export_error_lessons.py   # Export confirmed diagnoses with original logs
+│   └── validate_datasets.py      # Validate JSONL structure and quest schemas
 ├── data/
 │   ├── raw/
 │   │   └── mod_knowledge.jsonl   # Full mod catalog (RAG source)
