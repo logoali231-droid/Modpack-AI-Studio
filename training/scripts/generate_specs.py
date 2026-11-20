@@ -15,13 +15,15 @@ Uso:
 
 import argparse
 import json
+import os
 import random
 import sqlite3
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DB_PATH  = Path.home() / ".local" / "share" / "modpack-ai-studio" / "mods.sqlite3"
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+DB_PATH  = DATA_HOME / "modpack-ai-studio" / "mods.sqlite3"
 OUT_FILE = Path(__file__).resolve().parents[1] / "datasets" / "specs_generated.json"
 
 # Tema → categorias, grind permitido, categorias proibidas (fit temático)
