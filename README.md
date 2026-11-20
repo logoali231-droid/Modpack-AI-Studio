@@ -15,10 +15,11 @@ Vou atualizar o `README.md` para incluir todo o pipeline de treinamento de IA qu
 * Required dependency graph resolution from catalog metadata.
 * **JAR-internal dependency verification:** inspects Forge/NeoForge `mods.toml`, Fabric/Quilt metadata, and legacy `mcmod.info` IDs before installation. Downloads are staged and checked before being copied into the Prism instance.
 * Installs into an existing Prism Launcher instance, with optional mods-folder backup.
-* Progression-sized quest campaigns generated as native Minecraft datapacks. Chapter count is no longer fixed at three. No FTB Quests or other quest mod is required.
+* Progression-sized quest campaigns generated as native Minecraft datapacks. Optional FTB Quests campaign design can also be generated as structured JSON + Markdown editor instructions from the installed modpack manifest. Chapter count is progression-driven.
 * Optional Playwright browser research can collect public documentation snippets for the local model. Browser text is untrusted context, never proof of compatibility.
 * API keys stored in the Linux desktop keyring, never in the repository.
 * **Local Mod Library (Modrinth + CurseForge):** maintains a local SQLite index at `~/.local/share/modpack-ai-studio/mods.sqlite3` (or `$XDG_DATA_HOME/modpack-ai-studio/mods.sqlite3`). Search and filter cached projects by text, Minecraft version, loader, and source. Use **Sync from selected catalog** to search the official Modrinth or CurseForge catalog and cache up to 20 matching projects, including full descriptions where the provider API exposes them. Normal modpack generation also caches catalog summaries and enriches selected projects.
+* **AI Training tab:** runs catalog export, design-brief generation, modpack/FTB quest dataset generation, confirmed-error export, and dataset validation from the desktop GUI. Dataset generation uses the selected local Ollama model.
 * **Error Auto Fix and persistent lessons:** sends selected logs to the configured model for diagnosis. Reports evidence, likely causes, safe repair steps, and a code-change suggestion; does not silently edit the project or delete files. Each diagnosis is stored locally under `~/.local/share/modpack-ai-studio/error_lessons.json`. Only lessons explicitly confirmed by the user are reused as context in later modpack planning, quest planning, and error analyses.
 * **AI Structure Designer:** supports single buildings and multi-building settlements. Qwen creates a compact architectural plan; Python validates it, builds the block geometry, and exports one vanilla structure NBT file for Minecraft Java 1.16.5 (DataVersion 2586). Includes interactive isometric 3D preview, modded block palette support, and one constrained repair attempt on invalid JSON.
 
@@ -61,6 +62,15 @@ chmod +x launch.sh
 
 Select Ollama (local, free), model `qwen2.5:3b`, and your modloader. First let the AI choose the Minecraft version, create a matching Prism instance, then select its folder. If you already have a world save, optionally select the world folder containing `level.dat` to install the quest datapack directly.
 
+## Optional FTB Quests editor guide
+
+On the Create page, enable **Also generate an FTB Quests editor guide (JSON + Markdown)**. After the modpack is installed, the app asks the model to design a multi-chapter FTB campaign using the modpack concept and installed mod list. It saves:
+
+- `Modpack_AI_FTB_Quest_Design.json`: structured chapter/quest plan, task/reward candidates, dependencies and editor tips.
+- `Modpack_AI_FTB_Quest_Design.md`: readable step-by-step guide for building the campaign in FTB Quests.
+
+This is a design/export workflow, not an FTB Quests importer. The model sees installed mod names, not the runtime registry, so syntax validation cannot prove that a modded item/entity/dimension/advancement ID exists. Verify candidate IDs in JEI or in-game before entering them. The app does not create FTB .snbt files or automate clicks in the FTB editor.
+
 ## Quest system scope
 
 The model chooses the number of chapters based on the requested progression. The validator accepts 1-100 chapters and 1-20 quests per chapter as safety limits, not design targets. Quest objectives and rewards currently use vanilla item IDs only. Datapacks support the verified legacy advancement/item schema for Minecraft 1.13 through 1.20.4; unsupported newer schemas are rejected before mod installation. If no world is selected, the app creates `Modpack_AI_Quests.zip` in the Prism Minecraft directory; copy it into the target world's `datapacks` folder. Enter the world or run `/reload`, then press `L`. This uses Minecraft's native Advancements UI, not a separate custom quest-book screen.
@@ -99,6 +109,21 @@ The **Structure Designer** tab supports single buildings and multi-building sett
 
 This remains an early desktop application, not a feature-complete Modbot.gg clone. AI selection and browser research can be wrong. The dependency verifier checks declared required internal mod IDs, but version-range evaluation and all loader-specific edge cases are not yet complete. Back up your instance and close Minecraft before installing mods.
 
+## AI Training from the desktop GUI
+
+Open the **AI Training** tab after syncing the Mod Library. The buttons run the same scripts documented below, without requiring terminal commands:
+
+1. Export the SQLite mod catalog to JSONL (knowledge/RAG source).
+2. Generate diverse design briefs from the real catalog.
+3. Generate and validate modpack-design examples.
+4. Generate FTB Quests editor-instruction examples.
+5. Export confirmed Error Auto Fix cases that include their original logs.
+6. Validate the generated JSONL datasets.
+
+Use the same local Ollama model selected in the main window. The **Fresh** option deletes and rebuilds the selected dataset outputs, so the GUI asks for confirmation first. The QLoRA training stage is intentionally separate and still requires a compatible GPU runtime; the desktop GUI prepares and validates the data but does not pretend that CPU-side dataset generation is model fine-tuning.
+
+The FTB quest dataset is for teaching the model campaign design and producing structured editor instructions. It does not create FTB SNBT files, install FTB Quests, or automatically click through the FTB editor. The existing modpack-generation checkbox still creates the app's separate native Minecraft Advancements datapack.
+
 ## AI Training Pipeline (Experimental)
 
 This repository now includes an **experimental AI training pipeline** designed to fine-tune a local Qwen model (e.g., `qwen2.5:3b`) specifically for Minecraft modpack design and quest generation. The pipeline is **local-first**, uses only free tools (Ollama, SQLite, Python), and is intended for users who want to specialize the model beyond generic instruction-following.
@@ -130,7 +155,9 @@ training/
 │   ├── export_mods.py            # Export mod table to JSONL for RAG
 │   ├── generate_specs.py         # Generate design briefs from catalog statistics
 │   ├── build_modpack_dataset.py  # Generate & validate modpack design examples
-│   └── build_quest_dataset.py    # (Planned) Generate FTB-style quest instructions
+│   ├── build_quest_dataset.py    # Generate FTB-style quest instructions
+│   ├── export_error_lessons.py   # Export confirmed diagnoses with original logs
+│   └── validate_datasets.py      # Validate JSONL structure and quest schemas
 ├── data/
 │   ├── raw/
 │   │   └── mod_knowledge.jsonl   # Full mod catalog (RAG source)

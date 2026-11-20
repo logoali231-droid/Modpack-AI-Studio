@@ -492,7 +492,12 @@ class ModpackPipeline:
         if not isinstance(result, dict) or not result.get("summary"):
             raise ValueError("The model did not return a usable error diagnosis.")
         saved_path = record_lesson(
-            result, self.c.get("model", "unknown"), self.c.get("provider", "unknown")
+            result, self.c.get("model", "unknown"), self.c.get("provider", "unknown"),
+            error_text=error_text,
+            context={
+                "minecraft_version": self.c.get("version", ""),
+                "loader": self.c.get("loader", ""),
+            },
         )
         result["saved_to"] = str(saved_path)
         result["memory_note"] = (
@@ -710,6 +715,19 @@ class ModpackPipeline:
                     f"{type(exc).__name__}: {exc}"
                 )
 
+        ftb_quest_status = {"status": "disabled"}
+        if self.c.get("ftb_quest_guide"):
+            try:
+                from .ftb_quest_guide import generate_ftb_quest_guide
+                self.progress(0, 0, "Designing FTB Quests editor guide…")
+                ftb_quest_status = generate_ftb_quest_guide(
+                    self.llm, mcdir / "modpack-ai-manifest.json", mcdir, self.log
+                )
+            except Exception as exc:
+                ftb_quest_status = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+                self.log(f"WARNING · Modpack installed, but FTB quest guide generation failed: {exc}")
+
+        manifest["ftb_quest_design"] = ftb_quest_status
         manifest["quests"] = quest_status
         (mcdir / "modpack-ai-manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -721,7 +739,13 @@ class ModpackPipeline:
             return {
                 "success": True,
                 "quests_failed": True,
-                "message": "Mods installed successfully, but quest generation failed. See the Activity log and manifest."
+                "message": "Mods installed successfully, but native quest generation failed. See the Activity log and manifest."
+            }
+        if ftb_quest_status["status"] == "failed":
+            return {
+                "success": True,
+                "ftb_quests_failed": True,
+                "message": "Mods installed successfully, but FTB quest guide generation failed. See the Activity log and manifest."
             }
         return {
             "success": True,

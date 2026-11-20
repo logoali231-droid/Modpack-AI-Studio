@@ -7,17 +7,18 @@ Uso:
     python training/scripts/build_quest_dataset.py --fresh
 """
 
-import hashlib, json, re, sqlite3, sys, unicodedata, urllib.request
+import hashlib, json, os, re, sqlite3, sys, unicodedata, urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = Path.home() / ".local" / "share" / "modpack-ai-studio" / "mods.sqlite3"
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+DB_PATH = DATA_HOME / "modpack-ai-studio" / "mods.sqlite3"
 SPECS_FILE = PROJECT_ROOT / "training" / "datasets" / "specs_generated.json"
 OUTPUT = PROJECT_ROOT / "training" / "datasets" / "quest_generation.jsonl"
 DEBUG_DIR = PROJECT_ROOT / "training" / "datasets" / "_failed_raw_quests"
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen2.5:3b"
+OLLAMA_URL = os.environ.get("MODPACK_AI_OLLAMA_URL", "http://localhost:11434").rstrip("/") + "/api/generate"
+MODEL = os.environ.get("MODPACK_AI_MODEL", "qwen2.5:3b")
 ATTEMPTS = 4
 TEMPS = [0.4, 0.6, 0.8, 1.0]
 

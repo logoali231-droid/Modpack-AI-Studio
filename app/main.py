@@ -8,7 +8,7 @@ import requests
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QTextEdit, QPushButton, QLabel, QProgressBar,
-    QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea
+    QFileDialog, QMessageBox, QGroupBox, QCheckBox, QTabWidget, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import QThread, Signal, QTimer, QElapsedTimer, Qt, QPointF
 from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
@@ -191,6 +191,20 @@ class Worker(QThread):
                     "phase": "catalog_synced", **result
                 })
                 return
+            if phase == "training_task":
+                from .training_tasks import run_training_task
+                result = run_training_task(
+                    self.cfg.get("training_task", ""),
+                    self.log.emit,
+                    model=self.cfg.get("training_model", "qwen2.5:3b"),
+                    ollama_url=self.cfg.get("ollama_url", "http://localhost:11434"),
+                    count=self.cfg.get("training_count", 100),
+                    fresh=bool(self.cfg.get("training_fresh", False)),
+                )
+                self.done.emit(True, f"Training task completed: {result['task']}", {
+                    "phase": "training_task_complete", **result
+                })
+                return
             if phase == "retry_quests":
                 result = pipeline.retry_quests_only()
                 self.done.emit(bool(result.get("success")), result.get("message", "Quest retry finished."), {
@@ -228,7 +242,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Modpack AI Studio")
-        self.resize(1080, 850)
+        self.resize(1100, 760)
+        self.setMinimumSize(680, 520)
         self.elapsed = QElapsedTimer()
         self.phase = "choose_version"
         self.selected_version = None
@@ -270,7 +285,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(progress_group)
 
         tabs = QTabWidget()
+        tabs.setDocumentMode(True)
+        tabs.setUsesScrollButtons(True)
+        tabs.setMinimumSize(0, 0)
         layout.addWidget(tabs, 1)
+
+        def add_scrollable_tab(page, title):
+            """Put every feature page in its own responsive vertical scroll area."""
+            page.setMinimumSize(0, 0)
+            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            scroll.setWidget(page)
+            tabs.addTab(scroll, title)
+            return scroll
 
         create_page = QWidget()
         create_layout = QVBoxLayout(create_page)
@@ -358,18 +390,22 @@ class MainWindow(QMainWindow):
             "Describe the experience you want: progression, survival, technology, "
             "difficulty, exploration, preferred Minecraft version and required mods…"
         )
-        self.prompt.setMinimumHeight(170)
+        self.prompt.setMinimumHeight(130)
+        self.prompt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         prompt_layout.addWidget(self.prompt)
         create_layout.addWidget(prompt_group, 1)
 
         options_row = QHBoxLayout()
         self.quests = QCheckBox("Generate a progression-sized custom quest campaign (no quest mod needed)")
         self.quests.setChecked(True)
+        self.ftb_quests = QCheckBox("Also generate an FTB Quests editor guide (JSON + Markdown)")
+        self.ftb_quests.setChecked(False)
         self.browser_research = QCheckBox("Use optional Playwright browser research (slower; requires browser setup)")
         self.browser_research.setChecked(False)
         self.backup = QCheckBox("Back up existing mods folder")
         self.backup.setChecked(True)
         options_row.addWidget(self.quests)
+        options_row.addWidget(self.ftb_quests)
         options_row.addWidget(self.browser_research)
         options_row.addWidget(self.backup)
         options_row.addStretch(1)
@@ -380,14 +416,7 @@ class MainWindow(QMainWindow):
         self.runbtn.clicked.connect(self.start)
         create_layout.addWidget(self.runbtn)
 
-        # Keep the Create page usable on smaller displays and when maximized.
-        create_scroll = QScrollArea()
-        create_scroll.setWidgetResizable(True)
-        create_scroll.setFrameShape(QScrollArea.NoFrame)
-        create_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        create_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        create_scroll.setWidget(create_page)
-        tabs.addTab(create_scroll, "Create")
+        add_scrollable_tab(create_page, "Create")
 
         activity_page = QWidget()
         activity_layout = QVBoxLayout(activity_page)
@@ -410,7 +439,7 @@ class MainWindow(QMainWindow):
             "font-family: 'DejaVu Sans Mono'; font-size: 12px; }"
         )
         activity_layout.addWidget(self.log, 1)
-        tabs.addTab(activity_page, "Activity")
+        add_scrollable_tab(activity_page, "Activity")
 
         error_page = QWidget()
         error_layout = QVBoxLayout(error_page)
@@ -421,7 +450,7 @@ class MainWindow(QMainWindow):
         ))
         self.error_input = QTextEdit()
         self.error_input.setPlaceholderText("Paste the complete relevant error log here…")
-        self.error_input.setMinimumHeight(150)
+        self.error_input.setMinimumHeight(120)
         error_layout.addWidget(self.error_input)
         error_actions = QHBoxLayout()
         self.analyze_button = QPushButton("Error Auto Fix · Analyze")
@@ -444,7 +473,7 @@ class MainWindow(QMainWindow):
         self.retry_quests_button.setObjectName("secondaryButton")
         self.retry_quests_button.clicked.connect(self.retry_quests)
         error_layout.addWidget(self.retry_quests_button)
-        tabs.addTab(error_page, "Error Auto Fix")
+        add_scrollable_tab(error_page, "Error Auto Fix")
 
         library_page = QWidget()
         library_layout = QVBoxLayout(library_page)
@@ -493,8 +522,57 @@ class MainWindow(QMainWindow):
         self.library_results.setReadOnly(True)
         self.library_results.setPlaceholderText("Search the local library or sync compatible projects from an official catalog.")
         library_layout.addWidget(self.library_results, 1)
-        tabs.addTab(library_page, "Mod Library")
+        add_scrollable_tab(library_page, "Mod Library")
         self.refresh_library_stats()
+
+        training_page = QWidget()
+        training_layout = QVBoxLayout(training_page)
+        training_layout.setContentsMargins(12, 14, 12, 12)
+        training_layout.addWidget(QLabel(
+            "Build and validate local Qwen training datasets without using the terminal. "
+            "The catalog JSONL is a knowledge/RAG export, not a fine-tuning dataset. "
+            "Only review and train on validated examples."
+        ))
+        training_form = QFormLayout()
+        self.training_count = QLineEdit("100")
+        self.training_fresh = QCheckBox("Start dataset generation from scratch (replace existing JSONL)")
+        self.training_status = QLabel("Dataset status: checking…")
+        self.training_status.setObjectName("subtitle")
+        training_form.addRow("Number of design briefs", self.training_count)
+        training_form.addRow(self.training_fresh)
+        training_layout.addLayout(training_form)
+        training_layout.addWidget(self.training_status)
+        training_buttons = QHBoxLayout()
+        self.training_export_button = QPushButton("1. Export mod catalog")
+        self.training_specs_button = QPushButton("2. Generate design briefs")
+        self.training_modpack_button = QPushButton("3. Build modpack dataset")
+        self.training_quests_button = QPushButton("4. Build FTB quest dataset")
+        for button in (self.training_export_button, self.training_specs_button,
+                       self.training_modpack_button, self.training_quests_button):
+            button.setObjectName("secondaryButton")
+            training_buttons.addWidget(button)
+        training_layout.addLayout(training_buttons)
+        training_actions = QHBoxLayout()
+        self.training_errors_button = QPushButton("Export confirmed error lessons")
+        self.training_validate_button = QPushButton("Validate all datasets")
+        training_actions.addWidget(self.training_errors_button)
+        training_actions.addWidget(self.training_validate_button)
+        training_layout.addLayout(training_actions)
+        training_note = QLabel(
+            "Order: export catalog → generate briefs → build modpack examples → build FTB quest examples → validate. "
+            "The quest dataset contains FTB-editor instructions; it does not create .snbt files or install FTB Quests. "
+            "QLoRA training still runs on a GPU runtime such as Colab, not inside this local GUI."
+        )
+        training_note.setWordWrap(True)
+        training_layout.addWidget(training_note)
+        self.training_export_button.clicked.connect(lambda: self.run_training("export_catalog"))
+        self.training_specs_button.clicked.connect(lambda: self.run_training("generate_specs"))
+        self.training_modpack_button.clicked.connect(lambda: self.run_training("build_modpack"))
+        self.training_quests_button.clicked.connect(lambda: self.run_training("build_quests"))
+        self.training_errors_button.clicked.connect(lambda: self.run_training("export_errors"))
+        self.training_validate_button.clicked.connect(lambda: self.run_training("validate"))
+        add_scrollable_tab(training_page, "AI Training")
+        self.refresh_training_status()
 
         structure_page = QWidget()
         structure_layout = QVBoxLayout(structure_page)
@@ -508,7 +586,7 @@ class MainWindow(QMainWindow):
         self.structure_version = QComboBox()
         self.structure_version.addItem("Minecraft Java 1.16.5")
         self.structure_description = QTextEdit()
-        self.structure_description.setMinimumHeight(180)
+        self.structure_description.setMinimumHeight(130)
         self.structure_description.setPlaceholderText(
             "Example: An abandoned medieval watchtower, 3 floors, mossy stone, "
             "a library, a hidden treasure room, a balcony and a broken roof. "
@@ -560,7 +638,7 @@ class MainWindow(QMainWindow):
         self.structure_result.setReadOnly(True)
         self.structure_result.setPlaceholderText("Blueprint summary, block count and output path will appear here.")
         structure_layout.addWidget(self.structure_result, 1)
-        tabs.addTab(structure_page, "Structure Designer")
+        add_scrollable_tab(structure_page, "Structure Designer")
 
         self.provider.currentTextChanged.connect(self.provider_changed)
         self.provider_changed(self.provider.currentText())
@@ -782,6 +860,49 @@ class MainWindow(QMainWindow):
         else:
             self.continue_generation()
 
+    def refresh_training_status(self):
+        try:
+            from .training_tasks import training_counts
+            counts = training_counts()
+            self.training_status.setText(
+                "Dataset status: " + " · ".join(f"{name}: {count}" for name, count in counts.items())
+            )
+        except Exception as exc:
+            self.training_status.setText(f"Dataset status unavailable: {exc}")
+
+    def run_training(self, task):
+        try:
+            count = int(self.training_count.text().strip())
+            if count < 1 or count > 1000:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Invalid count", "Enter a number between 1 and 1000.")
+            return
+        if not self.provider.currentText().startswith("Ollama"):
+            QMessageBox.warning(
+                self, "Ollama required",
+                "Dataset generation scripts use local Ollama. Select Ollama and choose the model before starting a training task."
+            )
+            return
+        cfg = self.build_ai_config()
+        if cfg is None:
+            return
+        cfg.update({
+            "phase": "training_task",
+            "training_task": task,
+            "training_model": self.model.currentText().strip() or "qwen2.5:3b",
+            "training_count": count,
+            "training_fresh": self.training_fresh.isChecked(),
+        })
+        if task in ("build_modpack", "build_quests") and self.training_fresh.isChecked():
+            answer = QMessageBox.question(
+                self, "Replace dataset?",
+                "Fresh mode deletes the existing output JSONL before generating new examples. Continue?"
+            )
+            if answer != QMessageBox.Yes:
+                return
+        self.launch_worker(cfg)
+
     def refresh_library_stats(self):
         try:
             stats = ModDatabase().stats()
@@ -951,6 +1072,7 @@ class MainWindow(QMainWindow):
             "loader": self.loader.currentText(),
             "prompt": self.prompt.toPlainText(),
             "quests": self.quests.isChecked(),
+            "ftb_quest_guide": self.ftb_quests.isChecked(),
             "browser_research": self.browser_research.isChecked(),
             "world_path": self.world_path.text().strip(),
             "backup": self.backup.isChecked(),
@@ -965,7 +1087,7 @@ class MainWindow(QMainWindow):
 
     def launch_worker(self, cfg):
         self.runbtn.setEnabled(False)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button", "training_export_button", "training_specs_button", "training_modpack_button", "training_quests_button", "training_errors_button", "training_validate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(False)
@@ -1020,7 +1142,7 @@ class MainWindow(QMainWindow):
     def finished(self, ok, message, payload):
         self.clock.stop()
         self.runbtn.setEnabled(True)
-        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button"):
+        for name in ("analyze_button", "analyze_log_button", "confirm_lesson_button", "retry_quests_button", "library_search_button", "library_sync_button", "structure_generate_button", "training_export_button", "training_specs_button", "training_modpack_button", "training_quests_button", "training_errors_button", "training_validate_button"):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(True)
@@ -1037,7 +1159,7 @@ class MainWindow(QMainWindow):
             # while the user creates the matching Prism instance.
             for widget in (
                 self.provider, self.model, self.key, self.ollama,
-                self.auto_version, self.loader, self.prompt, self.browser_research
+                self.auto_version, self.loader, self.prompt, self.browser_research, self.ftb_quests
             ):
                 widget.setEnabled(False)
             self.runbtn.setText("2. Continue with this Prism instance")
@@ -1060,6 +1182,11 @@ class MainWindow(QMainWindow):
             self.error_output.setPlainText(json.dumps(diagnosis, ensure_ascii=False, indent=2))
             self.statusBar().showMessage(message)
             QMessageBox.information(self, "Diagnosis complete", message)
+            return
+        if payload.get("phase") == "training_task_complete":
+            self.refresh_training_status()
+            self.statusBar().showMessage(message)
+            QMessageBox.information(self, "AI training task", message)
             return
         if payload.get("phase") == "catalog_synced":
             self.refresh_library_stats()
@@ -1116,7 +1243,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLE)
     window = MainWindow()
-    window.showMaximized()
+    window.show()
     sys.exit(app.exec())
 
 

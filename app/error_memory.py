@@ -56,13 +56,15 @@ def _save(data, path):
     _write_report(data, path)
 
 
-def record_lesson(diagnosis, model, provider):
+def record_lesson(diagnosis, model, provider, error_text="", context=None):
     data = _read()
     data["lessons"].append({
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "unverified",
         "model": str(model),
         "provider": str(provider),
+        "error_text": str(error_text)[-14000:],
+        "context": context if isinstance(context, dict) else {},
         "diagnosis": diagnosis,
     })
     data["lessons"] = data["lessons"][-100:]
