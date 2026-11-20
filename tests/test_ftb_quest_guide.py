@@ -14,6 +14,8 @@ def sample_campaign():
             "reward": {"type": "xp", "amount": 20},
             "depends_on": [] if index == 1 else [f"Quest {index - 1}"],
             "ftb_tip": "Add an Item task in the FTB Quests editor.",
+            "editor_steps": ["Open the quest editor.", "Add an Item task and pick the item.", "Set the amount, reward and dependency, then save."],
+            "verification": "safe_vanilla",
         })
     return {
         "campaign_title": "Test campaign",
