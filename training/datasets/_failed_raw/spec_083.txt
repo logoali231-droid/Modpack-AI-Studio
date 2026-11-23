@@ -1,0 +1,34 @@
+# spec:
+{
+  "mc": "1.20.4",
+  "loader": "neoforge",
+  "theme": "hardcore survival",
+  "category": "worldgen",
+  "grind": "high",
+  "focus": "YUNG's API as central tree, no shortcuts"
+}
+
+# raw:
+{
+  "progression": [
+    "Navigate biomes and gather saplings with YUNG's API",
+    "Mine Obsidian to access The Aether, craft a basic lantern",
+    "Explore The Aether, find floating islands and villages",
+    "Gather rare materials from the Deep Aether, build your first structure",
+    "Craft an advanced lantern and expand your island home"
+  ],
+  "design_rules": [
+    "Focus on unique features of YUNG's API for exploration rewards",
+    "Limit obsidian usage to critical access points",
+    "Incorporate natural progression within each mod’s ecosystem",
+    "Encourage player engagement with The Aether’s diverse content"
+  ],
+  "suggested_mods": [
+    "YUNG's API",
+    "The Aether",
+    "Deep Aether",
+    "Aether Villages",
+    "Ancient Aether",
+    "Twilight Treehouses"
+  ]
+}

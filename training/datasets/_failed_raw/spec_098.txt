@@ -1,0 +1,32 @@
+# spec:
+{
+  "mc": "1.21",
+  "loader": "forge",
+  "theme": "mixed gameplay",
+  "category": "magic",
+  "grind": "medium",
+  "focus": "Ars Ocultas-centered with Ars \u00c9nergistique as side path"
+}
+
+# raw:
+{
+  "progression": [
+    "[BetterEnd] Infusions Extra Compatibility: Gather rare minerals, crafting begins",
+    "Ancient Reforging: Upgrade your weapons and armor, find ancient relics",
+    "Ars Ocultas: Begin your occult research, craft essences and sigils",
+    "Ars Controle: Perfect your rituals and experiments, learn new effects",
+    "[BetterEnd] Infusions Extra Compatibility: Craft enchanted items, expand inventory"
+  ],
+  "design_rules": [
+    "Focus on medium-grind mechanics to keep progression balanced",
+    "Ensure no recipe gating behind non-essential mods to maintain mod synergy",
+    "Prioritize utility and customization over pure raw materials in early game",
+    "Reward discovery with unique items or effects from side paths like Ars Énergistique"
+  ],
+  "suggested_mods": [
+    "[BetterEnd] Infusions Extra Compatibility",
+    "Ars Ocultas",
+    "Ars Controle",
+    "Ancient Reforging"
+  ]
+}

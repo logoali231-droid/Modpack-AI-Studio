@@ -29,7 +29,8 @@ class ModpackPipeline:
         self.database = ModDatabase()
         self.llm = LLMClient(
             cfg["provider"], cfg.get("api_key", ""), cfg["model"], log,
-            cfg.get("ollama_url", "http://localhost:11434")
+            cfg.get("ollama_url", "http://localhost:11434"),
+            num_ctx=cfg.get("num_ctx"),
         )
         self.api = (
             CurseForge(log, cfg.get("curseforge_key", ""))
@@ -114,6 +115,48 @@ class ModpackPipeline:
                 if version:
                     return version
         raise ValueError("Prism metadata does not contain a net.minecraft component/version.")
+
+    PRISM_COMPONENTS = {
+        "net.minecraft": "minecraft",
+        "net.minecraftforge": "forge",
+        "net.neoforged": "neoforge",
+        "net.fabricmc.fabric-loader": "fabricloader",
+        "org.quiltmc.quilt-loader": "quilt_loader",
+    }
+    # Quilt can load Fabric mods, so a Fabric pack is allowed on a Quilt instance.
+    LOADER_COMPATIBLE_COMPONENTS = {
+        "forge": {"forge"}, "neoforge": {"neoforge"},
+        "fabric": {"fabricloader", "quilt_loader"}, "quilt": {"quilt_loader"},
+    }
+
+    def prism_platform_versions(self):
+        """Versions of Minecraft and the mod loader installed in the Prism instance (mmc-pack.json)."""
+        root = Path(self.c["instance"]).expanduser().resolve()
+        try:
+            data = json.loads((root / "mmc-pack.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Could not read Prism instance metadata: {exc}") from exc
+        found = {}
+        for component in data.get("components", []):
+            key = self.PRISM_COMPONENTS.get(component.get("uid"))
+            version = str(component.get("version", "")).strip()
+            if key and version:
+                found[key] = version
+        return found
+
+    def check_instance_loader(self, loader, platform):
+        """Refuse to install Forge mods into a Fabric instance (and similar mismatches)."""
+        wanted = self.LOADER_COMPATIBLE_COMPONENTS.get(str(loader).lower())
+        if not wanted:
+            return
+        installed = sorted(key for key in platform if key != "minecraft")
+        if not wanted & set(platform):
+            have = ", ".join(installed) if installed else "no mod loader"
+            raise ValueError(
+                f"Loader mismatch: the modpack targets {loader}, but this Prism instance has {have}. "
+                "No files were installed. Add the right loader to the instance in Prism, "
+                "or change the loader in the app."
+            )
 
     def select_minecraft_version(self, concept, fallback):
         """Ask the AI for a target release, then validate it against known released versions."""
@@ -280,7 +323,7 @@ class ModpackPipeline:
             {
                 "project_id": project_id,
                 "name": entry["metadata"]["name"],
-                "description": entry["metadata"]["description"],
+                "description": entry["metadata"]["description"][:400],
                 "categories": entry["metadata"]["categories"],
                 "downloads": entry["metadata"]["downloads"],
             }
@@ -350,10 +393,10 @@ class ModpackPipeline:
         """Plan once, then generate and validate one chapter per local-model call."""
         lessons = load_confirmed_lessons(limit=8)
         plan_input = (
-            f"Modpack concept: {concept}\\nMinecraft {mc} {loader}. "
-            f"Installed mods: {installed_names}\\n"
+            f"Modpack concept: {concept}\nMinecraft {mc} {loader}. "
+            f"Installed mods: {installed_names}\n"
             f"CONFIRMED LESSONS FROM PREVIOUS RUNS (use only when relevant): "
-            f"{json.dumps(lessons, ensure_ascii=False)}\\n"
+            f"{json.dumps(lessons, ensure_ascii=False)}\n"
             "Return a progression outline only. Do not write quests yet."
         )
         plan_raw = self.llm.text(QUEST_PLAN_SYSTEM, plan_input)
@@ -370,9 +413,9 @@ class ModpackPipeline:
             description = str(outline.get("description") or "Progress through this stage.")[:200]
             self.log(f"Quest chapter {index}/{len(outlines)}: generating {title}…")
             chapter_input = (
-                f"CAMPAIGN: {campaign_title}\\nCHAPTER {index}/{len(outlines)}: {title}\\n"
-                f"CHAPTER PURPOSE: {description}\\nMODPACK: {concept}\\n"
-                f"MINECRAFT: {mc} {loader}\\nINSTALLED MODS: {installed_names}\\n"
+                f"CAMPAIGN: {campaign_title}\nCHAPTER {index}/{len(outlines)}: {title}\n"
+                f"CHAPTER PURPOSE: {description}\nMODPACK: {concept}\n"
+                f"MINECRAFT: {mc} {loader}\nINSTALLED MODS: {installed_names}\n"
                 "Create exactly 3 quests for THIS chapter only. Return a JSON object "
                 "with title, description, and quests. Do not return a chapters wrapper."
             )
@@ -393,14 +436,14 @@ class ModpackPipeline:
                 last_error = first_error
                 for attempt in range(1, 3):
                     repair_input = (
-                        f"CHAPTER: {title}\\nPURPOSE: {description}\\n"
-                        f"VALIDATION ERROR: {last_error}\\nPREVIOUS RESPONSE:\\n{previous_response}\\n"
+                        f"CHAPTER: {title}\nPURPOSE: {description}\n"
+                        f"VALIDATION ERROR: {last_error}\nPREVIOUS RESPONSE:\n{previous_response}\n"
                         "Return exactly one JSON object with title, description, and exactly 3 quests. "
                         "Each quest must have a non-empty tasks array. Each task item must be a vanilla "
                         "Minecraft item ID beginning minecraft:. Do not return a campaign wrapper."
                     )
                     repaired = self.llm.text(
-                        QUEST_CHAPTER_SYSTEM + "\\nRepair only this chapter. Output the required JSON object.",
+                        QUEST_CHAPTER_SYSTEM + "\nRepair only this chapter. Output the required JSON object.",
                         repair_input
                     )
                     previous_response = repaired
@@ -502,9 +545,9 @@ class ModpackPipeline:
             "Analyze this application/Minecraft error log. Separate observed facts from hypotheses. "
             "Return JSON with fields: summary, likely_cause, evidence, safe_fix_steps (array), "
             "code_change_suggestion, reusable_lesson, confidence (low/medium/high). "
-            "Never claim a fix was applied. Do not recommend deleting worlds or mod folders.\\n\\n"
-            f"CONFIRMED PRIOR LESSONS:\\n{json.dumps(lessons, ensure_ascii=False)}\\n\\n"
-            f"ERROR LOG:\\n{error_text[-14000:]}"
+            "Never claim a fix was applied. Do not recommend deleting worlds or mod folders.\n\n"
+            f"CONFIRMED PRIOR LESSONS:\n{json.dumps(lessons, ensure_ascii=False)}\n\n"
+            f"ERROR LOG:\n{error_text[-14000:]}"
         )
         result = self.llm.json_from(self.llm.text(ERROR_ANALYSIS_SYSTEM, prompt))
         if not isinstance(result, dict) or not result.get("summary"):
@@ -550,6 +593,8 @@ class ModpackPipeline:
                 f"version to {prism_mc}."
             )
         self.log(f"Prism instance verified: Minecraft {prism_mc}.")
+        platform_versions = self.prism_platform_versions()
+        self.check_instance_loader(loader, platform_versions)
 
         # Native advancement quests are optional. An unsupported datapack schema
         # must never block the primary modpack installation.
@@ -705,9 +750,17 @@ class ModpackPipeline:
             # Inspect real internal mod IDs from the downloaded archives. Catalog
             # dependency IDs are not necessarily the mod IDs Forge/Fabric checks.
             staged_jars = list(staging.glob("*.jar"))
-            existing_jars = list(modsdir.glob("*.jar"))
+            staged_by_name = {jar.name: jar for jar in staged_jars}
+            # A JAR that is already installed byte-for-byte is replaced by its staged copy
+            # below; counting both would report the same mod ID as a "duplicate".
+            existing_jars = [
+                jar for jar in modsdir.glob("*.jar")
+                if not (jar.name in staged_by_name
+                        and jar.read_bytes() == staged_by_name[jar.name].read_bytes())
+            ]
             verifier_report = verify_mod_directory(
-                existing_jars + staged_jars, self.log
+                existing_jars + staged_jars, self.log,
+                platform_versions=platform_versions,
             )
             self.log(
                 f"Dependency verification passed: {verifier_report['checked_jars']} JARs, "
@@ -824,3 +877,5 @@ class ModpackPipeline:
             "quests_failed": False,
             "message": "Modpack installation completed. Review the manifest and validate the instance in Prism."
         }
+
+

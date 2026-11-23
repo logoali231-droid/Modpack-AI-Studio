@@ -1,0 +1,28 @@
+# spec:
+{
+  "mc": "1.21",
+  "loader": "neoforge",
+  "theme": "primitive survival",
+  "category": "food",
+  "grind": "low",
+  "focus": "Farmer's Delight + Chef's Delight - Farmer's Delight Villagers progression"
+}
+
+# raw:
+{
+  "progression": [
+    "Plant seeds in the dirt and grow crops",
+    "Craft a basic farming tool to tend to plants",
+    "Harvest food from growing crops for sustenance"
+  ],
+  "design_rules": [
+    "Encourage early-game resource gathering without excessive grinding",
+    "Avoid recipe gating behind late-tier mods that do not enhance gameplay immediately",
+    "Incorporate both Farmer's Delight and Chef's Delight to balance simplicity with depth"
+  ],
+  "suggested_mods": [
+    "Farmer's Delight",
+    "Chef's Delight - Farmer's Delight Villagers",
+    "Croptopia Delight: Croptopia"
+  ]
+}
