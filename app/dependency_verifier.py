@@ -66,8 +66,17 @@ def _bool(value, default=True):
     return default if value is None else bool(value)
 
 
+FORGE_METADATA_FILES = ("META-INF/neoforge.mods.toml", "META-INF/mods.toml")
+
+
 def _forge_metadata(archive):
-    data = _read_toml(archive, "META-INF/mods.toml")
+    # NeoForge 1.20.5+ renamed the descriptor; older Forge/NeoForge use mods.toml.
+    data, source = None, "META-INF/mods.toml"
+    for candidate in FORGE_METADATA_FILES:
+        data = _read_toml(archive, candidate)
+        if isinstance(data, dict):
+            source = candidate
+            break
     if not isinstance(data, dict):
         return [], {}, []
     ids, versions = [], {}
@@ -89,14 +98,23 @@ def _forge_metadata(archive):
         for dep in entries:
             if not isinstance(dep, dict) or not dep.get("modId"):
                 continue
+            # NeoForge 1.20.5+ uses type = required|optional|discouraged|incompatible;
+            # Forge and older NeoForge use mandatory = true|false.
+            dep_type = str(dep.get("type", "")).strip().lower()
+            if dep_type:
+                mandatory = dep_type == "required"
+                kind = "breaks" if dep_type == "incompatible" else "requires"
+            else:
+                mandatory = _bool(dep.get("mandatory"), True)
+                kind = "requires"
             dependencies.append({
                 "owner": str(owner),
                 "id": str(dep["modId"]).strip(),
-                "mandatory": _bool(dep.get("mandatory"), True),
+                "mandatory": mandatory,
                 "range": str(dep.get("versionRange", "")).strip(),
                 "side": str(dep.get("side", "BOTH")).upper(),
-                "source": "META-INF/mods.toml",
-                "kind": "requires",
+                "source": source,
+                "kind": kind,
             })
     return ids, versions, dependencies
 
@@ -121,6 +139,9 @@ def _fabric_metadata(archive, filename):
         if not isinstance(entries, dict):
             continue
         for dep_id, constraint in entries.items():
+            if isinstance(constraint, (list, tuple)):
+                # Fabric allows several alternative ranges: ["a", "b"] means a OR b.
+                constraint = " || ".join(str(part).strip() for part in constraint)
             dependencies.append({
                 "owner": mod_id or "unknown",
                 "id": str(dep_id),
@@ -203,12 +224,13 @@ def _single_range_matches(version, expression):
     expression = expression.strip()
     if not expression or expression in ("*", "any"):
         return True
-    if expression.startswith((">=", "<=", ">", "<", "^", "~")):
+    if expression.startswith((">=", "<=", ">", "<", "^", "~", "=")):
         operator = expression[:2] if expression[:2] in (">=", "<=") else expression[:1]
         target = expression[len(operator):].strip()
         cmp = _compare_versions(version, target)
         if cmp is None:
             return None
+        if operator == "=": return cmp == 0
         if operator == ">=": return cmp >= 0
         if operator == "<=": return cmp <= 0
         if operator == ">": return cmp > 0
@@ -251,6 +273,20 @@ def version_satisfies(version, expression):
     expression = str(expression or "").strip()
     if not expression or expression in ("*", "any"):
         return True
+    if "||" in expression:
+        outcomes = [version_satisfies(version, part) for part in expression.split("||")]
+        if True in outcomes:
+            return True
+        return None if None in outcomes else False
+    if not expression.startswith(("[", "(")):
+        # Fabric/npm comparators: ">=1.20 <1.21" means both must hold.
+        expression = re.sub(r"(>=|<=|>|<|=|\^|~)\s+", r"\1", expression)
+        tokens = expression.split()
+        if len(tokens) > 1:
+            outcomes = [version_satisfies(version, token) for token in tokens]
+            if False in outcomes:
+                return False
+            return None if None in outcomes else True
     # Maven permits unions such as [1.0,1.5),[2.0,)
     parts = re.findall(r"[\[(][^)\]]*[\])]", expression)
     compact = expression.replace(" ", "")
@@ -263,7 +299,7 @@ def version_satisfies(version, expression):
 
 
 def _inspect_archive_bytes(raw, label, depth=0):
-    result = {"file": label, "mod_ids": [], "mod_versions": {},
+    result = {"file": label, "mod_ids": [], "embedded_ids": [], "mod_versions": {},
               "dependencies": [], "metadata": [], "warnings": []}
     try:
         import io
@@ -310,7 +346,10 @@ def _inspect_archive_bytes(raw, label, depth=0):
                             result["warnings"].append("Could not read embedded Jar-in-Jar: " + path)
                             continue
                         child = _inspect_archive_bytes(embedded, label + "!" + path, depth + 1)
-                        result["mod_ids"].extend(child["mod_ids"])
+                        # Bundled libraries satisfy dependencies, but two mods bundling the
+                        # same library is normal (the loader picks one), so never a duplicate.
+                        result["embedded_ids"].extend(child["mod_ids"])
+                        result["embedded_ids"].extend(child["embedded_ids"])
                         result["mod_versions"].update(child["mod_versions"])
                         result["dependencies"].extend(child["dependencies"])
                         result["metadata"].extend(child["metadata"])
@@ -318,6 +357,7 @@ def _inspect_archive_bytes(raw, label, depth=0):
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         result["error"] = str(exc)
     result["mod_ids"] = sorted(set(result["mod_ids"]))
+    result["embedded_ids"] = sorted(set(result["embedded_ids"]) - set(result["mod_ids"]))
     return result
 
 
@@ -325,21 +365,27 @@ def inspect_jar(path):
     path = Path(path)
     try:
         if path.stat().st_size > 512 * 1024 * 1024:
-            return {"file": path.name, "mod_ids": [], "mod_versions": {},
+            return {"file": path.name, "mod_ids": [], "embedded_ids": [], "mod_versions": {},
                     "dependencies": [], "metadata": [], "warnings": [],
                     "error": "JAR exceeds 512 MiB inspection limit."}
         return _inspect_archive_bytes(path.read_bytes(), path.name)
     except OSError as exc:
-        return {"file": path.name, "mod_ids": [], "mod_versions": {},
+        return {"file": path.name, "mod_ids": [], "embedded_ids": [], "mod_versions": {},
                 "dependencies": [], "metadata": [], "warnings": [], "error": str(exc)}
 
 
-def verify_mod_directory(paths, log=lambda message: None, strict=True):
-    """Validate IDs, declared version ranges, conflicts, duplicates and archive health."""
+def verify_mod_directory(paths, log=lambda message: None, strict=True, platform_versions=None):
+    """Validate IDs, declared version ranges, conflicts, duplicates and archive health.
+
+    platform_versions optionally maps built-in IDs to the versions of the target
+    instance (for example {"minecraft": "1.20.1", "forge": "47.2.0"}), so mods that
+    declare an incompatible Minecraft/loader range are caught before installation.
+    """
     inspections = [inspect_jar(path) for path in paths
                    if str(path).lower().endswith(".jar")]
-    known = set(BUILTIN_IDS)
-    versions = {}
+    platform_versions = {str(k): str(v) for k, v in (platform_versions or {}).items() if v}
+    known = set(BUILTIN_IDS) | set(platform_versions)
+    versions = dict(platform_versions)
     owners = {}
     for item in inspections:
         for mod_id in item["mod_ids"]:
@@ -347,6 +393,10 @@ def verify_mod_directory(paths, log=lambda message: None, strict=True):
             owners.setdefault(mod_id, []).append(item["file"])
             if mod_id in item["mod_versions"]:
                 versions[mod_id] = item["mod_versions"][mod_id]
+        for mod_id in item.get("embedded_ids", []):
+            known.add(mod_id)
+            if mod_id in item["mod_versions"]:
+                versions.setdefault(mod_id, item["mod_versions"][mod_id])
 
     missing, incompatible, conflicts, unverifiable = [], [], [], []
     unreadable, warnings = [], []
@@ -380,12 +430,13 @@ def verify_mod_directory(paths, log=lambda message: None, strict=True):
                 match = version_satisfies(installed_version, required_range)
                 if match is False:
                     incompatible.append({"file": item["file"], "dependency": dep_id,
-                                          "required": required_range, "installed": installed_version})
+                                          "required": required_range, "installed": installed_version,
+                                          "platform": dep_id in platform_versions})
                 elif match is None:
                     unverifiable.append({"file": item["file"], "dependency": dep_id,
                                           "range": required_range, "installed": installed_version,
                                           "kind": "requires"})
-            elif required_range and not installed_version:
+            elif required_range and not installed_version and dep_id not in BUILTIN_IDS:
                 unverifiable.append({"file": item["file"], "dependency": dep_id,
                                       "range": required_range, "installed": None,
                                       "kind": "requires"})
@@ -433,3 +484,5 @@ def verify_mod_directory(paths, log=lambda message: None, strict=True):
     if unverifiable:
         log(f"WARNING: {len(unverifiable)} dependency version constraint(s) could not be verified.")
     return report
+
+

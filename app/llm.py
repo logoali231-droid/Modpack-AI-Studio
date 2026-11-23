@@ -1,11 +1,17 @@
 """Adapters for Ollama, OpenAI Responses API, and Google Gemini."""
-import json, re
+import json, os, re
 import requests
 
+# Ollama's default context window is small (a few thousand tokens). Long prompts are
+# then silently truncated from the start, which can drop the system prompt itself.
+DEFAULT_NUM_CTX = 8192
+
+
 class LLMClient:
-    def __init__(self, provider, key, model, log, base_url="http://localhost:11434"):
+    def __init__(self, provider, key, model, log, base_url="http://localhost:11434", num_ctx=None):
         self.provider, self.key, self.model, self.log = provider, key, model, log
         self.base_url = base_url.rstrip("/")
+        self.num_ctx = int(num_ctx or os.environ.get("MODPACK_AI_NUM_CTX") or DEFAULT_NUM_CTX)
         self.session = requests.Session()
 
     def text(self, system, user):
@@ -29,6 +35,7 @@ class LLMClient:
             else:
                 r = self.session.post(f"{self.base_url}/api/chat",
                     json={"model":self.model,"stream":False,"format":"json",
+                          "options":{"num_ctx":self.num_ctx,"temperature":0.25},
                           "messages":[{"role":"system","content":system},{"role":"user","content":user}]}, timeout=(10,300))
                 self._check(r); result = r.json().get("message",{}).get("content","")
         except requests.Timeout as e: raise RuntimeError(f"{self.provider} timed out: {e}") from e
@@ -62,3 +69,5 @@ class LLMClient:
                     depth-=1
                     if depth==0: return json.loads(cleaned[start:i+1])
             raise ValueError("AI response contained incomplete JSON.")
+
+
